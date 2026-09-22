@@ -1,46 +1,82 @@
-# SomniLoop 0.3
+# SomniLoop
 
-SomniLoop — локальное настольное приложение для Ubuntu 24.04: трекер привычек, планер и база людей с персональным LLM-графом. Главная поддерживает русский и английский языки; язык выбирается в настройках. Исходники написаны на Python и остаются прямо в папке проекта.
+**Habits, daily plans, and the people in your life — in one local-first desktop app.**
 
-## Что уже реализовано
+SomniLoop combines a habit tracker, a lightweight planner, and a personal knowledge
+graph. Keep track of what needs doing today, write down what you know about people,
+and explore connections without sending your notes to a hosted AI service.
 
-- единый блок «Сегодня» для привычек, назначенных планов, просроченных и сегодняшних разовых задач;
-- одна прокрутка: ниже «Сегодня» — библиотека привычек и планов и компактный планер в пропорции 2:1; на узком окне планер располагается ниже;
-- быстрые отметки «выполнено», «частично», «не выполнено», сворачивание завершённых пунктов, поиск и четыре режима сортировки;
-- быстрая отметка сегодняшних привычек прямо на главном экране;
-- название, текущая серия, индикатор `!`, недельный прогресс и ближайшая ручная дата прямо на карточке;
-- чек-листы со статусами «выполнено / не выполнено / не заполнено»;
-- зелёные, жёлтые и красные даты в календаре, включая редактирование истории;
-- расписания: ежедневно, каждые N дней, дни недели, N раз в неделю, ежемесячно, ежегодно;
-- коллекции, где каждый пункт имеет свою ежемесячную или ежегодную дату — например, один общий трекер дней рождения;
-- ручной режим с заранее назначенными датами и отдельными подпунктами для каждой даты;
-- разовые задачи: завершённые автоматически уходят в архив, незавершённые просроченные остаются в планере;
-- архив задач и привычек с восстановлением;
-- SQLite-хранилище, атомарный экспорт и восстановление всех данных из JSON;
-- ежедневные локальные резервные копии за последние семь дней;
-- русский интерфейс, тёмная и светлая темы;
-- профиль владельца внутри раздела графа; прежние записи дневника сохраняются в базе и продолжают учитываться при анализе;
-- каталог людей: свободный рассказ, дата рождения, интересы, биография, образование, занятие, источники и возраст на дату обновления графа;
-- история изменений сведений о человеке; обнаруженные противоречия подчёркнуты;
-- шторка и системные напоминания о днях рождения;
-- интерактивный граф людей и привычек: сохраняемая раскладка, закрепление узлов, мини-карта и группы при отдалении; старые узлы мест сохраняются в базе, но скрыты на экране;
-- включаемый навык поиска связей людей: сопоставление учёбы, работодателей, групп и годов; предполагаемые знакомства отмечены пунктиром, основания и цитаты доступны в карточках людей;
-- поиск по именам, биографиям, интересам, фактам и источникам; совместные фильтры категорий и типов связей, режим окружения человека;
-- полностью локальное извлечение графа через GGUF-модель и `llama-cpp-python`;
-- рабочий упрощённый анализатор, если LLM ещё не установлена.
+Built with **Python, PySide6, and SQLite**. Developed primarily on **Ubuntu 24.04**.
 
-## Установка на Ubuntu 24.04
+> **Status: hobby project under active development.** The planner and graph UI are
+> usable, but local-LLM extraction and relationship discovery are experimental.
+> Keep backups of important data. Other operating systems are not yet verified.
 
-В терминале открой папку проекта и выполни:
+## Features
+
+### Habits and planning
+
+- A unified **Today** view for habits, dated plans, and due or overdue one-off tasks.
+- Quick completion buttons, checklists, streaks, and editable calendar history.
+- Daily, interval, weekday, weekly-quota, monthly, and yearly schedules.
+- Manually scheduled plans with different checklist items for each date.
+- Search, sorting, collapsible details, and an archive with restoration.
+- A compact, responsive dashboard with light and dark themes.
+
+Checklist items are either complete or incomplete. A whole day or task can still
+be partially complete when only some items are done. Partially completed scheduled
+days currently preserve a streak. Completed one-off tasks move to the archive.
+
+### People and the knowledge graph
+
+- Editable people profiles, birthdays, contact details, and free-form notes.
+- Source-linked facts, history, and visible conflicting information.
+- An interactive graph with search, filters, neighborhood focus, zoom, and a minimap.
+- Saved node positions, pinning, and grouped views when zoomed out.
+- Optional local-LLM extraction and suggested connections based on education or work.
+- Birthday notifications, including optional Linux desktop reminders.
+
+Suggested connections are **hypotheses, not proof that two people know each other**.
+Sharing an employer or university does not automatically mean being friends,
+coworkers on the same team, or classmates.
+
+### Data and imports
+
+- Local SQLite storage, JSON export/restore, and automatic backups.
+- Telegram Desktop JSON import with a contact-review step in Settings.
+- Import of prepared dossiers using the app-specific `somniloop.dossiers.v1` format.
+- Russian and English UI support; some graph and import messages are still Russian.
+
+Telegram import is optional, not a requirement for using the planner or graph.
+A prepared dossier file is not the same format as a full application backup.
+
+## Getting started
+
+### Requirements
+
+- Python **3.11 or newer** and a desktop environment capable of running Qt.
+- Git and Python's `venv` support for the source installation below.
+- Optional: `llama-cpp-python` and a compatible GGUF model for local AI features.
+
+### Run from source
 
 ```bash
-chmod +x install.sh run-dev.sh
-./install.sh
+git clone https://github.com/KovalevRoma/SomniLoop.git
+cd SomniLoop
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+python -m somniloop
 ```
 
-Скрипт создаст виртуальное окружение `.venv`, установит проект и добавит SomniLoop в меню приложений. Ярлык также копируется в папку рабочего стола, если она существует. Если GNOME просит разрешить запуск, выбери «Разрешить запуск» в контекстном меню ярлыка.
+This installs the app without the optional LLM dependency. The planner does not
+require a model; a limited rule-based graph extractor is also available.
+Cloning a private repository requires GitHub access to it.
 
-Если Ubuntu сообщает, что модуль `venv` отсутствует:
+### Ubuntu desktop integration
+
+From the project directory:
 
 ```bash
 sudo apt update
@@ -48,151 +84,182 @@ sudo apt install python3-venv build-essential cmake
 ./install.sh
 ```
 
-После изменения исходников перезапусти приложение. Поскольку пакет установлен в editable-режиме, повторная установка обычно не нужна.
+The installer creates `.venv`, installs the app in editable mode, attempts to install
+local LLM support, and adds an application-menu launcher. If LLM installation fails,
+it falls back to the base app. It also installs a user-level systemd reminder timer
+when systemd is available; desktop notifications use `notify-send` when available.
 
-## Обновление с предыдущей версии
+Keep the project folder in place: the launcher runs its source files. To launch
+directly afterward, use `./run-dev.sh`.
 
-1. Полностью закрой SomniLoop. Если менял исходники самостоятельно, сначала сохрани копию старой папки проекта.
-2. Распакуй новую версию и запусти `./install.sh` из её папки. Скрипт обновит путь в ярлыке. Не удаляй каталог с личной базой данных.
-3. При первом запуске структура базы обновится автоматически. Перед миграцией создаётся `somniloop.db.pre-v3.bak` рядом с основной базой; исходные записи, отметки и рассказы сохраняются.
-4. Открой граф и нажми «Обновить граф», чтобы пересчитать данные новым анализатором. Первая обработка занимает больше времени; последующие используют кэш.
+## Using the local AI
 
-Для переноса и восстановления данных используй «Настройки → Экспорт JSON» и «Настройки → Восстановить из JSON». Перед импортом приложение автоматически сохраняет текущую базу в каталоге `backups`.
+Install the optional backend inside the virtual environment:
 
-## Нужно ли компилировать приложение
+```bash
+python -m pip install -e '.[llm]'
+```
 
-Нет: SomniLoop — обычный Python-проект, а `install.sh` устанавливает его в editable-режиме. Настройки, трекеры, био и записи сохраняются сразу во время работы. Изменения Python-кода не подхватываются уже открытым окном: сохрани файл, полностью закрой SomniLoop и запусти снова.
+In **Settings**, download the offered Qwen2.5-1.5B-Instruct Q4_K_M model or select a
+compatible local GGUF file. A dedicated GPU is not required. Installing the backend
+may require native build tools; speed depends on hardware, model, and input size.
 
-Если ты распаковал новую версию проекта в другую папку, один раз снова выполни `./install.sh` именно из новой папки — ярлык будет запускать её исходники. После этого можешь редактировать файлы в `src/somniloop/` без сборки исполняемого файла.
+**Saving a person does not run the LLM.** Analysis starts when you explicitly choose
+**Refresh graph**. The update roughly follows this pipeline:
 
-## Локальная LLM
+1. Collect profile information, people notes, and other stored sources.
+2. Extract structured facts from text fragments, reusing cached results where possible.
+3. Assemble dossiers and check conflicting claims.
+4. Build relationships; optionally run the additional people-connection discovery pass.
+5. Save the result and refresh the graph view.
 
-Открой `Настройки → Скачать рекомендуемую модель`. Предлагается [Qwen2.5-1.5B-Instruct Q4_K_M](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF), около 1,12 ГБ. Выделенная видеокарта не требуется. Точное время анализа зависит от объёма сведений о людях, модели, сборки `llama-cpp-python` и нагрузки на процессор.
+The optional connection pass currently asks the LLM to extract affiliations from
+people's dossiers, then compares those affiliations in ordinary code. It does not
+make one LLM request for every possible pair of people.
 
-Модель и личные данные остаются на компьютере; интернет нужен для установки зависимостей и загрузки модели, но не для анализа. Изменения в базе людей сохраняются сразу и не запускают LLM. Извлечение фактов и перестроение связей выполняются только по кнопке «Обновить граф» сразу для всей базы. Без выбранной GGUF работает ограниченный анализатор по правилам: он не понимает текст как полноценная LLM. Если `llama-cpp-python` не установился автоматически:
+Malformed, truncated, or unsupported answers can trigger smaller-fragment retries.
+Successful fragments are cached. If optional connection discovery remains incomplete,
+the app can save the main graph and offer **Continue finding connections**. A completed
+pass through the queue does not necessarily mean every person's analysis succeeded.
+
+## Known limitations
+
+- **Connection discovery can be very slow.** Repeated extraction and validation
+  failures can turn a large update into hours of work. A small local model can still
+  produce incorrect or incomplete answers despite JSON validation.
+- **Progress is work-based, not time-based.** The current person's queue position,
+  successfully completed people, and cache hits are different counters. The ETA can
+  be misleading when many attempts fail; it is not a completion-time guarantee.
+- **Names are not reliable identities.** Current name-based merging can conflate
+  different people with identical names. Review imported contacts and inferred facts.
+- **English localization is incomplete**, especially around graph processing and imports.
+- **Desktop behavior varies.** Native file dialogs, notifications, window decorations,
+  and some modeless windows depend on the desktop environment. Not every window is
+  an embedded modal overlay.
+- **Data is not encrypted by the app.** Local-first does not mean protected from other
+  users or programs with access to your files.
+
+## Privacy and backups
+
+Inference runs locally. Dependency installation and model downloads need internet
+access; ordinary local analysis does not require a cloud AI account.
+
+Default Ubuntu data location:
+
+```text
+~/.local/share/SomniLoop/
+├── somniloop.db     # Personal data, settings, graph, and extraction cache
+├── backups/        # Automatic and pre-restore backups
+└── models/         # Downloaded models
+```
+
+Use **Settings → Export JSON** before major changes or imports. Exports, backups, and
+the extraction cache may contain sensitive personal information. Protect them just
+like the main database; disk encryption is separate from the app.
+
+The repository excludes Telegram exports in `TG/`, databases, model files, environment
+files, and common local artifacts. **Git is a source-code backup, not a backup of your
+personal SomniLoop data.** Review files before committing or sharing them.
+
+To try the app with a separate data directory on Linux:
+
+```bash
+SOMNILOOP_DATA_DIR=/tmp/somniloop-demo ./run-dev.sh
+```
+
+Use a new empty directory for a fresh demo; `/tmp` is temporary, not durable storage.
+
+## Updating
+
+Finish or cancel any active graph update, export a backup, and close the app before
+updating its source. Preserve any local code changes before pulling.
+
+```bash
+git pull --ff-only
+source .venv/bin/activate
+python -m pip install -e .
+python -m somniloop
+```
+
+Use `-e '.[llm]'` instead if you also need to install or update the optional backend.
+The personal database lives outside the checkout. Editable installs pick up source
+changes on restart; the running process does not hot-reload Python code.
+
+## TODO / near-term roadmap
+
+These are planned improvements, **not features already implemented**.
+
+### Reliability and graph performance
+
+- [ ] Extract reusable structured affiliations during dossier creation, avoiding a
+      second full LLM reading pass just to discover connections.
+- [ ] Recompute only relationships affected by changed people or facts.
+- [ ] Make retry budgets and failure reasons clearer; reduce repeated requests that
+      cannot improve a result, while preserving successful work.
+- [ ] Separate attempted, successful, failed, and cached work in the progress UI;
+      correct ETA behavior when processing continues past failures.
+- [ ] Benchmark real models with anonymized datasets, including roughly 200 people;
+      measure runtime, extraction quality, cancellation, and resume behavior.
+- [ ] Improve identity matching with stable IDs and explicit confirmation for
+      ambiguous same-name contacts.
+
+### Everyday usability
+
+- [ ] Finish English localization of graph, import, and error messages.
+- [ ] Expand real-desktop checks for resizing, keyboard focus, and Save/Cancel behavior.
+- [ ] Polish dense graph layouts and make uncertain relationships easier to review.
+- [ ] Document the dossier JSON schema with a small, synthetic import example.
+
+### Project maintenance and possible next steps
+
+- [ ] Add GitHub Actions for tests and linting.
+- [ ] Add current screenshots using synthetic data and a short first-run walkthrough.
+- [ ] Choose a license and document supported platforms and release packaging.
+- [ ] Evaluate embeddings for semantic search and candidate relationship discovery;
+      keep factual evidence separate from similarity scores.
+- [ ] Plan optional encryption and safer handling of sensitive exports.
+
+## Development
 
 ```bash
 source .venv/bin/activate
-pip install -e '.[llm]'
+python -m pip install -e '.[dev]'
+QT_QPA_PLATFORM=offscreen python -m pytest -q
+ruff check src tests tools
 ```
 
-Можно использовать другую совместимую GGUF-модель: выбери её файл в настройках.
+Tests cover scheduling, persistence, imports, graph processing, and offscreen UI
+behavior. LLM tests use controlled responses: passing tests do **not** establish the
+accuracy or speed of a real GGUF model. Desktop integration also needs manual testing.
 
-### Как обрабатываются записи
-
-Используются профиль и полная история рассказов о людях. Длинные тексты делятся на фрагменты; предыдущий фрагмент даёт контекст для местоимений. Сохранённые данными прежних версий записи тоже учитываются как источники, но не становятся отдельными узлами графа.
-
-LLM запрашивается со схемой JSON; ответ дополнительно проверяется. Незавершённые и зацикленные ответы повторно обрабатываются меньшими фрагментами. Если ответ пропустил явно названного известного человека, выполняется отдельный запрос о нём без потери уже извлечённых сведений. Если анализ всё же не удался, прежний граф остаётся целым. Отмена проверяется при потоковой генерации ответа. Если во время анализа изменились исходные записи, устаревший результат не применяется — нужно обновить граф ещё раз.
-
-Смена учёбы или работы сохраняется как история, а не автоматически считается противоречием. Несогласующиеся даты рождения проверяются программно; остальные явные противоречия дополнительно ищет LLM. Модель может ошибаться или пропустить связь: сверяй важные сведения с показанными источниками. Это не система гарантированной проверки фактов.
-
-### Производительность
-
-- Локальная модель загружается лениво и переиспользуется: один экземпляр, до шести CPU-потоков, контекст 4096 токенов, память модели отображается через `mmap`.
-- Результаты фрагментов кэшируются в SQLite по содержимому и версии модели/анализатора. Изменённый фрагмент и зависящий от него контекст обрабатываются заново; кэш не подменяет новые данные старым пересказом.
-- Анализ выполняется вне потока интерфейса, поэтому окно остаётся отзывчивым.
-- Для подсчёта серий отметки трекера читаются пакетно и кэшируются. Граф рассчитывает отталкивание только для соседних узлов и прекращает анимацию после стабилизации или скрытия страницы.
-- Зависимость интерфейса — `PySide6-Essentials`, без ненужных модулей полного комплекта Qt. Ядро Ubuntu и системные настройки не изменяются.
-
-Модель остаётся в RAM после первого анализа до выхода из приложения. Кэш содержит личную информацию, как и база; он не отправляется в сеть. SQLite и экспорт не зашифрованы: при необходимости используй шифрование диска и защищай резервные копии.
-
-### Управление графом
-
-Обновление показывает два счётчика: выполненные операции общего плана и завершённую работу текущего этапа. В поиске знакомств единица — человек со всеми обработанными фрагментами, поэтому 8 из 198 — 4,04% этого этапа. Это процент работы, а не времени; повторные попытки не продвигают шкалу. Общий план включает подготовку, фрагменты источников, сборку досье, анализ людей, сборку связей и сохранение. 100% общего плана появляется только после сохранения полностью выполненного результата.
-
-Обрезанные, зацикленные или неподтверждённые ответы навыка автоматически повторяются на меньших фрагментах с перекрытием контекста, глубиной не более шести уровней и последней ограниченной попыткой на коротком фрагменте. Успешные ответы и планы дробления сохраняются в SQLite сразу: повторное обновление после отмены или перезапуска продолжает работу через кэш. Если отдельный фрагмент всё равно не удалось обработать, остальные люди проверяются до конца, основной граф сохраняется, а интерфейс явно показывает незавершённый поиск и предлагает продолжить — без ложных 100% и без подмены локальной LLM упрощённым анализатором. Отчёт о незавершённой работе сохраняется между запусками.
-
-Чтобы искать предполагаемые знакомства, включи «Навык LLM: искать связи людей» и нажми «Обновить граф». Нужна выбранная локальная GGUF-модель. Навык запускается на этапе построения связей, использует кэш неизменившихся фрагментов досье и поддерживает отмену. Настройка запоминается. Совпадение организации не считается доказательством знакомства или учёбы на одном курсе; непересекающиеся известные годы исключают гипотезу. Без годов в карточке явно указана неопределённость. Имеющиеся связи не заменяются гипотезами. Инструкция навыка находится в `src/somniloop/knowledge/connections.py` (`SKILL`).
-
-Колесо плавно меняет масштаб под курсором, перетаскивание свободного места перемещает холст. Перетаскивание человека закрепляет его позицию; открепить можно в карточке или контекстном меню. Раскладка и масштаб сохраняются в SQLite и включаются в обычный экспорт. При обновлении прежние узлы остаются на своих местах, новые получают свободное место. Намеренно наложенные друг на друга закреплённые узлы автоматически не раздвигаются.
-
-При отдалении люди объединяются в подписанные группы; двойной щелчок по группе возвращает к людям. Выбор узла подсвечивает его связи и открывает карточку справа. «Окружение» оставляет человека и его непосредственных соседей, «Весь граф» возвращает общий вид. Фильтры категорий оставляют также связанные узлы других категорий, чтобы не терять контекст. Поиск учитывает активные фильтры.
-
-Клавиатура: `Ctrl+F` — поиск; стрелки — выбор узла; `Ctrl` + стрелки — перемещение холста; `+` / `−` — масштаб; `0` — вписать граф; `P` — закрепить или открепить; `Esc` — снять выделение; `Enter` на группе — перейти к людям. Мини-карта тоже поддерживает перемещение нажатием.
-
-Карточка показывает обе версии противоречивых сведений и ссылки на уточнение, исходные записи и человека. Метки «новые», «изменились» и «источники изменены» сравниваются с последними просмотренными сведениями и датой обновления графа. Возраст рассчитывается на дату обновления графа; при противоречивой дате рождения однозначный возраст не показывается. Новых узлов событий или дневника нет; ссылки на старые записи открывают уже существующие источники.
-
-## Даты, планер и напоминания
-
-На главной кнопка «Добавить» предлагает привычку, план по датам или разовую задачу. В верхней панели находятся уведомления о днях рождения со счётчиком, архив и настройки. В «Сегодня» просроченные назначенные планы отмечаются за свою исходную дату, а не за сегодняшний день. Выполненные разовые задачи по-прежнему уходят в архив; выполненные сегодня можно развернуть в блоке «Сегодня». Большие списки сегодня и предстоящих задач раскрываются кнопкой «Показать ещё», без отдельных полос прокрутки.
-
-В библиотеке доступен поиск по названию и описанию, фильтры типа и сортировка по необходимости отметки, ближайшей дате, серии или названию. Подробности карточки раскрываются стрелкой; редактирование и архивирование находятся в «⋯». Кнопок удаления пунктов на главной нет. Узнать назначение компактной кнопки можно из подсказки или доступного имени для экранного диктора.
-
-«Отмена» в редакторах отбрасывает несохранённый черновик, в том числе в био. В старых окнах людей и записей кнопка «Закрыть» сохраняет прежнее поведение автосохранения — это не «Отмена». Нажатия «Сохранить» и «Отмена» сопровождаются короткой анимацией, прозрачной для мыши; она не подтверждает успешное сохранение, если форма ещё не прошла проверку. Отмена загрузки модели и чтения Telegram запрашивает безопасную остановку и показывает её ожидание; текущий системный ввод-вывод может завершиться не мгновенно.
-
-Карточки переиспользуются по идентификаторам. Быстрая отметка не пересоздаёт экран и не пересчитывает посторонние карточки; история читается месячными блоками, а длинные серии используют кэш годовых агрегатов. Новое состояние «частично» хранится в дополнительных столбцах SQLite; старые базы и экспорты остаются совместимыми.
-
-День и год выбираются прокруткой или стрелками, месяц — из списка русских сокращений. Календарь также доступен кнопкой рядом с датой. Отображение: `28 июл 2026`. Для неизвестного года рождения сними «Год известен»; возраст тогда не показывается. В календаре понедельник первый, слева номера недель, дни круглые, сегодня обведено.
-
-В ручном трекере описание общее. При добавлении даты можно сразу ввести её подпункты, по одному на строку. Общие пункты, заданные при создании, остаются на всех датах. Удаление ручной даты удаляет её специальные подпункты и их отметки после подтверждения. Ссылки `http://` и `https://` в подпунктах и описаниях открываются в браузере по умолчанию; другие схемы не запускаются.
-
-Выполнение всех подпунктов разовой задачи отправляет её в архив. Можно завершить задачу целиком кнопкой ✓. Восстановление разовой задачи снимает отметки выполнения, сохраняя исходную дату. Архивирование привычки скрывает её с главной, не удаляя историю.
-
-Напоминание о дне рождения появляется в отдельной шторке за один календарный месяц и создаётся заново для следующего года. Установщик добавляет пользовательский systemd-таймер, который проверяет напоминания ежедневно и показывает их через `notify-send`, даже если основное окно закрыто. Скрытое напоминание в том же году не повторяется. Если есть противоречие о дате рождения, напоминание не создаётся до уточнения. Для 29 февраля в невисокосный год используется 28 февраля.
-
-Сохраняется нативный заголовок GNOME. Нижние углы рисуются на прозрачной поверхности со скруглением; дополнительно применяется маска окна там, где её поддерживает окружение. Развёрнутое окно остаётся прямоугольным. Оформление системного заголовка по-прежнему зависит от GNOME.
-
-## Где хранятся данные
-
-Основная база:
-
-```text
-~/.local/share/SomniLoop/somniloop.db
-```
-
-Автоматические и создаваемые перед импортом копии:
-
-```text
-~/.local/share/SomniLoop/backups/
-```
-
-Модель после загрузки:
-
-```text
-~/.local/share/SomniLoop/models/
-```
-
-Для тестового запуска с отдельной базой:
+Generate UI previews with disposable sample data:
 
 ```bash
-SOMNILOOP_DATA_DIR=/tmp/somniloop-test ./run-dev.sh
+QT_QPA_PLATFORM=offscreen python tools/preview_ui.py /tmp/somniloop-previews
 ```
 
-## Структура проекта
+### Project layout
 
 ```text
 src/somniloop/
-├── core/                 # SQLite, models, dates, scheduling and translations
-├── knowledge/            # Extraction, evidence, conflict checks and LLM cache
-├── ui/                   # PySide6 screens and reusable widgets
-├── assets/               # Application icon
-├── app.py                # Application and database setup
-├── reminders.py          # Background birthday notifications
-└── __main__.py           # python -m somniloop entry point
-tests/                    # Core, migration, graph and offscreen UI tests
-tools/preview_ui.py       # UI previews with disposable sample data
-install.sh                # Editable installation and Ubuntu launcher
-run-dev.sh                # Development launcher
+├── core/          # Storage, scheduling, imports, models, and translations
+├── knowledge/     # Extraction, validation, connections, and LLM integration
+├── ui/            # PySide6 screens, graph canvas, and reusable controls
+├── assets/        # Application icon
+├── app.py         # Application setup
+└── reminders.py   # Birthday notification runner
+tests/             # Core and UI regression tests
+tools/             # Development helpers
+assets/            # Linux launcher and reminder service templates
 ```
 
-## Правила серий и календаря
+For bug reports, include reproduction steps, platform, and relevant error messages.
+For LLM issues, include the model name and failing stage. Use synthetic or redacted
+examples — do not attach private chat exports or your personal database.
 
-- зелёный: выполнены все пункты;
-- жёлтый: выполнен хотя бы один, но не все; жёлтый день сохраняет серию;
-- красный: ничего не выполнено в прошедшую запланированную дату либо явно выбрано «не выполнено»;
-- незапланированные дни серые, будущие не окрашиваются;
-- у недельной квоты серия измеряется успешно закрытыми неделями;
-- у остальных расписаний серия измеряется последовательными запланированными выполнениями;
-- для `N раз в неделю` знак `!` появляется, когда число оставшихся выполнений равно или превышает число оставшихся дней недели.
+See [CHANGELOG.md](CHANGELOG.md) for development history.
 
-## Тесты
+## License
 
-```bash
-source .venv/bin/activate
-pip install -e '.[dev]'
-.venv/bin/python -m pytest -q
-.venv/bin/ruff check src tests tools
-.venv/bin/ruff format --check src tests tools
-```
-
-Проверки интерфейса используют `QT_QPA_PLATFORM=offscreen`. Снимки окон на тестовых данных можно получить командой `QT_QPA_PLATFORM=offscreen python tools/preview_ui.py /tmp/somniloop-previews`. Тесты не открывают личную базу. Для LLM используются контролируемые тестовые ответы; это проверка обработки и кэширования, а не замер качества реальной GGUF-модели. Внешний вид нативной рамки, системные уведомления и открытие браузера требуют проверки на рабочем столе Ubuntu.
+No license has been selected yet. Public availability, if enabled later, should not
+be interpreted as an open-source license grant.
