@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SomniLoop
+Comment=Local habit tracker and personal knowledge graph
+Exec=@EXEC@
+Icon=@ICON@
+Terminal=false
+Categories=Utility;Office;
+StartupNotify=true
+StartupWMClass=SomniLoop
+

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "somniloop"
+version = "0.3.0"
+description = "A private, local-first habit tracker and animated personal knowledge graph."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6-Essentials>=6.7,<7",
+    "platformdirs>=4.2,<5",
+]
+
+[project.optional-dependencies]
+llm = ["llama-cpp-python>=0.3.0,<1"]
+dev = ["pytest>=8.0,<9", "ruff>=0.11,<1"]
+
+[project.scripts]
+somniloop = "somniloop.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+somniloop = ["assets/*.svg"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]

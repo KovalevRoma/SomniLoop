@@ -1,0 +1,40 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+*.db
+*.db-shm
+*.db-wal
+*.gguf
+*-preview.png
+SomniLoop-export-*.json
+
+# Personal data and local exports must never be published.
+TG/
+data/
+backups/
+exports/
+*.sqlite
+*.sqlite3
+*.sqlite*-wal
+*.sqlite*-shm
+*.db-journal
+*.log
+
+# Credentials and machine-specific configuration.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.codex/
+.agents/
+
+# Build output and local editor files.
+build/
+dist/
+.idea/
+.vscode/
+.DS_Store

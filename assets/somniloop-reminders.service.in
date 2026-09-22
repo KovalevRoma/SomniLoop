@@ -1,0 +1,6 @@
+[Unit]
+Description=SomniLoop birthday reminders
+
+[Service]
+Type=oneshot
+ExecStart="@PYTHON@" -m somniloop.reminders
