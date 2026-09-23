@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtCore import QDate, Qt, QTime, Signal
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QCheckBox,
     QDialogButtonBox,
     QFormLayout,
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QTabWidget,
+    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -38,9 +40,11 @@ class PlannerDialog(RoundedDialog):
 
         self.repository, self.i18n, self.task = repository, i18n, task
         self.setWindowTitle(i18n.t("planner_task"))
-        self.resize(620, 490)
+        self.resize(620, 440)
         root = QVBoxLayout(self)
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.title_edit = QLineEdit(task.title if task else "")
         self.validation_message = QLabel(i18n.t("name_required"))
         self.validation_message.setObjectName("attention")
@@ -52,9 +56,27 @@ class PlannerDialog(RoundedDialog):
         )
         self.description_edit = SmartPlainTextEdit(task.description if task else "")
         self.description_edit.setMaximumHeight(90)
+        time_row = QWidget()
+        time_layout = QHBoxLayout(time_row)
+        time_layout.setContentsMargins(0, 0, 0, 0)
+        self.has_time = QCheckBox(i18n.t("planner_set_time"))
+        self.time_edit = QTimeEdit()
+        self.time_edit.setObjectName("timePicker")
+        self.time_edit.setDisplayFormat("HH:mm")
+        self.time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.time_edit.setMinimumWidth(96)
+        self.time_edit.setAccessibleName(i18n.t("planner_time"))
+        self.time_edit.setTime(QTime.fromString(task.due_time, "HH:mm") if task and task.due_time else QTime(9, 0))
+        self.has_time.setChecked(bool(task and task.due_time))
+        self.time_edit.setEnabled(self.has_time.isChecked())
+        self.has_time.toggled.connect(self.time_edit.setEnabled)
+        time_layout.addWidget(self.has_time)
+        time_layout.addWidget(self.time_edit)
+        time_layout.addStretch()
         form.addRow(i18n.t("name"), self.title_edit)
         form.addRow("", self.validation_message)
         form.addRow(i18n.t("selected_date"), self.date_edit)
+        form.addRow(i18n.t("planner_time"), time_row)
         form.addRow(i18n.t("description"), self.description_edit)
         root.addLayout(form)
         root.addWidget(QLabel(i18n.t("tasks")))
@@ -84,6 +106,7 @@ class PlannerDialog(RoundedDialog):
             self.description_edit.toPlainText(),
             self.items_edit.toPlainText().splitlines(),
             self.task.id if self.task else None,
+            due_time=self.time_edit.time().toString("HH:mm") if self.has_time.isChecked() else "",
         )
         if self.parentWidget():
             show_saved(self.parentWidget(), self.i18n.t("saved"))
@@ -162,7 +185,7 @@ class PlannerColumn(QFrame):
             title = link_label(task.title)
             title.setObjectName("cardTitle")
             layout.addWidget(title)
-            date_label = QLabel(display_date(task.due_date))
+            date_label = QLabel(display_date(task.due_date) + (" · " + task.due_time if task.due_time else ""))
             date_label.setObjectName(
                 "attention" if date.fromisoformat(task.due_date) < date.today() else "muted"
             )

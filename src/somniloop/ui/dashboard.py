@@ -16,6 +16,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from somniloop.core.models import TaskState, TrackerMode
+
+from .activity_scrollbar import ActivityScrollBar
 from .dashboard_cards import TrackerCard, WrapLabel
 from .dashboard_data import DashboardData, local_date
 from .dashboard_sections import DashboardFilters, PlannerAgenda, TodayBlock
@@ -23,7 +26,7 @@ from .planner import PlannerDialog
 
 
 class ResponsiveColumns(QWidget):
-    """Preserve widget identity when changing between 2:1 columns and a stack."""
+    """Preserve widget identity when changing between equal columns and a stack."""
 
     def __init__(self, primary, secondary):
         super().__init__()
@@ -45,7 +48,7 @@ class ResponsiveColumns(QWidget):
         self.grid.addWidget(
             self.secondary, 0 if wide else 1, 1 if wide else 0, alignment=Qt.AlignmentFlag.AlignTop
         )
-        self.grid.setColumnStretch(0, 2 if wide else 1)
+        self.grid.setColumnStretch(0, 1)
         self.grid.setColumnStretch(1, 1 if wide else 0)
 
     def resizeEvent(self, event):
@@ -71,13 +74,15 @@ class Dashboard(QWidget):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         self.scroll = QScrollArea()
+        self.scroll.setVerticalScrollBar(ActivityScrollBar(self.scroll))
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         root.addWidget(self.scroll)
         self.container = QWidget()
         self.container.setMinimumWidth(0)
-        self.container.setObjectName("flat")
+        self.container.setObjectName("dashboardSurface")
+        self.container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         outer = QHBoxLayout(self.container)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -92,15 +97,10 @@ class Dashboard(QWidget):
         content.setContentsMargins(8, 8, 8, 12)
         content.setSpacing(12)
         header = QHBoxLayout()
-        heading = QHBoxLayout()
-        heading.setSpacing(8)
-        title = QLabel(i18n.t("dashboard"))
-        title.setObjectName("pageTitle")
         self.date_label = QLabel()
-        self.date_label.setObjectName("muted")
-        heading.addWidget(title)
-        heading.addWidget(self.date_label)
-        header.addLayout(heading, 1)
+        self.date_label.setObjectName("dashboardDate")
+        self.date_label.setWordWrap(True)
+        header.addWidget(self.date_label, 1)
         self.add = QPushButton("+ " + i18n.t("home_add"))
         self.add.setObjectName("primary")
         menu = QMenu(self.add)
@@ -139,6 +139,10 @@ class Dashboard(QWidget):
         self.planner = PlannerAgenda(repository, i18n)
         self.planner.changed.connect(self._planner_changed)
         self.planner.edit_requested.connect(self._edit_planner)
+        self.planner.open_plan.connect(self.open_requested)
+        self.planner.edit_plan.connect(self.edit_requested)
+        self.planner.calendar_plan.connect(self.calendar_requested)
+        self.planner.plan_changed.connect(self._tracker_changed)
         self.columns = ResponsiveColumns(self.library, self.planner)
         content.addWidget(self.columns)
         self.scroll.setWidget(self.container)
@@ -170,13 +174,23 @@ class Dashboard(QWidget):
         self.data.refresh(changed_tracker, planner_only)
         self.date_label.setText(local_date(self.data.today, self.i18n, full=True))
         self.today.set_data(self.data)
-        self.planner.set_tasks(self.data.planner)
+        self.planner.set_tasks(
+            self.data.planner,
+            [record for record in self.data.trackers.values() if record.tracker.mode == TrackerMode.MANUAL],
+        )
         self._render_library()
 
     def _render_library(self):
         records = self.data.filtered(
-            self.filters.category, self.filters.search.text(), self.filters.order.currentData()
+            "regular", self.filters.search.text(), self.filters.order.currentData()
         )
+        before_hiding = records
+        if self.filters.hide_done.isChecked():
+            records = [record for record in records if not (
+                bool(record.tasks) and all(item.state == TaskState.DONE for item in record.tasks)
+                or record.meta.quota_target is not None
+                and (record.meta.quota_done or 0) >= record.meta.quota_target
+            )]
         visible = {record.tracker.id for record in records}
         for identifier in list(self.cards):
             card = self.cards[identifier]
@@ -189,7 +203,10 @@ class Dashboard(QWidget):
                 self.card_layout.removeWidget(card)
                 card.hide()
         self.empty.setVisible(not records)
-        self.empty.setText(self.i18n.t("home_no_matches" if self.data.trackers else "home_empty"))
+        self.empty.setText(self.i18n.t(
+            "home_all_done" if before_hiding and not records else
+            "home_no_matches" if self.filters.search.text() else "home_empty"
+        ))
         for position, record in enumerate(records):
             identifier = record.tracker.id
             card = self.cards.get(identifier)

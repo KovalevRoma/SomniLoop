@@ -5,6 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QDate, Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QColorDialog,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QProgressDialog,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QStackedWidget,
     QTableWidget,
@@ -354,6 +357,9 @@ class CreateTrackerDialog(QDialog):
         self.mode_combo.addItem(i18n.t("regular"), TrackerMode.REGULAR)
         self.mode_combo.addItem(i18n.t("manual_mode"), TrackerMode.MANUAL)
         self.schedule_combo = QComboBox()
+        self.schedule_combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.schedule_combo.setMinimumContentsLength(16)
+        self.schedule_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         for key, value in (
             ("daily", ScheduleType.DAILY),
             ("interval", ScheduleType.INTERVAL),
@@ -435,7 +441,7 @@ class CreateTrackerDialog(QDialog):
         self._add_page(ScheduleType.INTERVAL, page)
 
         page = QWidget()
-        layout = QHBoxLayout(page)
+        layout = QGridLayout(page)
         self.weekday_checks: list[QCheckBox] = []
         for key in (
             "monday",
@@ -448,7 +454,8 @@ class CreateTrackerDialog(QDialog):
         ):
             check = QCheckBox(self.i18n.t(key))
             self.weekday_checks.append(check)
-            layout.addWidget(check)
+            position = len(self.weekday_checks) - 1
+            layout.addWidget(check, position // 4, position % 4)
         self._add_page(ScheduleType.WEEKDAYS, page)
 
         self.quota_spin = QSpinBox()
@@ -460,6 +467,7 @@ class CreateTrackerDialog(QDialog):
         self._add_page(ScheduleType.WEEKLY_QUOTA, page)
 
         self.month_day_spin = QSpinBox()
+        self.month_day_spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.month_day_spin.setRange(1, 31)
         self.month_day_spin.lineEdit().setReadOnly(True)
         self.month_day_spin.setValue(1)
@@ -486,6 +494,10 @@ class CreateTrackerDialog(QDialog):
     def _schedule_changed(self) -> None:
         kind = ScheduleType(self.schedule_combo.currentData())
         self.option_stack.setCurrentIndex(self.option_pages.get(kind, 0))
+        self.option_stack.setVisible(
+            TrackerMode(self.mode_combo.currentData()) == TrackerMode.REGULAR
+            and kind not in (ScheduleType.DAILY, ScheduleType.ITEM_DATES)
+        )
         collection = (
             kind == ScheduleType.ITEM_DATES
             and TrackerMode(self.mode_combo.currentData()) == TrackerMode.REGULAR
@@ -703,6 +715,8 @@ class SettingsDialog(QDialog):
             max(0, self.theme_combo.findData(repository.get_setting("theme", "dark")))
         )
         self.model_edit = QLineEdit(repository.get_setting("model_path", ""))
+        self.model_edit.setMinimumWidth(0)
+        self.model_edit.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         browse = QPushButton(i18n.t("choose_model"))
         browse.clicked.connect(self._browse_model)
         model_row = QWidget()

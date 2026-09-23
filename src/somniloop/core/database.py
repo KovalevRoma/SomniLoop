@@ -212,7 +212,10 @@ class Repository(PlanningRepository):
         """Keep databases created by earlier SomniLoop versions usable."""
         additions = {
             "task_entries": {"partial": "INTEGER NOT NULL DEFAULT 0"},
-            "planner_tasks": {"state": "TEXT NOT NULL DEFAULT 'unset'"},
+            "planner_tasks": {
+                "state": "TEXT NOT NULL DEFAULT 'unset'",
+                "due_time": "TEXT NOT NULL DEFAULT ''",
+            },
             "planner_items": {"state": "TEXT NOT NULL DEFAULT 'unset'"},
             "tasks": {"occurrence_date": "TEXT"},
             "people": {

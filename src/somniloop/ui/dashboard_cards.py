@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 from somniloop.core.models import ScheduleType, TaskState, TrackerMode
 
 from .dashboard_data import local_date, tracker_snapshot
+from .icons import interface_icon
 
 
 class WrapLabel(QLabel):
@@ -88,9 +90,27 @@ class VisibleCheckBox(QCheckBox):
 def icon_button(text, tooltip, callback=None):
     button = QPushButton(text)
     button.setFixedSize(32, 32)
-    button.setStyleSheet("padding: 0; border-radius: 8px;")
+    button.setStyleSheet("QPushButton {padding: 0; border-radius: 8px;} QPushButton::menu-indicator {image:none; width:0;}")
+    if text == "⋯":
+        button.setText("")
+        button.setIcon(interface_icon("more"))
+        button.setIconSize(QSize(22, 22))
     button.setToolTip(tooltip)
     button.setAccessibleName(tooltip)
+    if callback:
+        button.clicked.connect(callback)
+    return button
+
+
+def labeled_action(text, callback=None, icon=None):
+    button = QPushButton(text)
+    button.setFixedHeight(32)
+    button.setStyleSheet("padding: 3px 8px; border-radius: 8px;")
+    button.setToolTip(text)
+    button.setAccessibleName(text)
+    if icon:
+        button.setIcon(interface_icon(icon))
+        button.setIconSize(QSize(18, 18))
     if callback:
         button.clicked.connect(callback)
     return button
@@ -104,7 +124,7 @@ class QuickTaskRow(QWidget):
         self.setObjectName("flat")
         self.i18n = i18n
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 4, 0, 4)
+        row.setContentsMargins(0, 2, 0, 2)
         row.setSpacing(8)
         self.done = QPushButton()
         self.done.setObjectName("completionToggle")
@@ -114,18 +134,11 @@ class QuickTaskRow(QWidget):
         self.done.setAccessibleName(i18n.t("done") + ": " + text)
         self.done.setToolTip(i18n.t("done"))
         self.label = WrapLabel(text)
-        row.addWidget(self.label, 1)
         row.addWidget(self.done)
-        self.partial = icon_button("◐", i18n.t("home_partial_hint"))
-        for button in (self.partial,):
-            button.setCheckable(True)
-            row.addWidget(button)
-        self.partial.hide()
+        # Keep the action beside its text instead of across a wide empty row.
+        row.addWidget(self.label, 1)
         self.done.toggled.connect(
             lambda value: self.state_changed.emit(TaskState.DONE if value else TaskState.NOT_DONE)
-        )
-        self.partial.clicked.connect(
-            lambda value: self.state_changed.emit(TaskState.PARTIAL if value else TaskState.UNSET)
         )
         self.set_state(state)
 
@@ -133,7 +146,6 @@ class QuickTaskRow(QWidget):
         self.state = state
         for button, value in (
             (self.done, TaskState.DONE),
-            (self.partial, TaskState.PARTIAL),
         ):
             button.blockSignals(True)
             button.setChecked(state == value)
@@ -168,7 +180,7 @@ class TaskRows(QWidget):
         self.box.setContentsMargins(0, 0, 0, 0)
         self.box.setSpacing(0)
 
-    def update_rows(self, items, hide_done=False, allow_partial=False):
+    def update_rows(self, items, hide_done=False):
         wanted = {identifier for identifier, _, _ in items}
         for key in list(self.rows):
             if key not in wanted:
@@ -186,8 +198,6 @@ class TaskRows(QWidget):
                 self.rows[identifier] = row
             row.label.setText(text)
             row.set_state(state)
-            # Only a whole task without checklist items supports a manual partial mark.
-            row.partial.setVisible(allow_partial)
             row.setVisible(not hide_done or state != TaskState.DONE)
             if self.box.indexOf(row) != position:
                 self.box.insertWidget(position, row)
@@ -215,7 +225,7 @@ class TrackerCard(QFrame):
         self.title = WrapLabel()
         self.title.setObjectName("cardTitle")
         top.addWidget(self.title, 1)
-        self.attention = QLabel("!")
+        self.attention = QLabel(i18n.t("home_attention_short"))
         self.attention.setObjectName("homePriority")
         self.attention.setToolTip(i18n.t("home_attention"))
         top.addWidget(self.attention)
@@ -229,23 +239,31 @@ class TrackerCard(QFrame):
         more.setMenu(menu)
         top.addWidget(more)
         root.addLayout(top)
-        info = QHBoxLayout()
+        self.info = QGridLayout()
+        self.info.setSpacing(8)
         self.schedule = WrapLabel()
         self.schedule.setObjectName("muted")
-        info.addWidget(self.schedule, 1)
-        self.expand = icon_button("⌄", i18n.t("home_details"))
+        self.actions = QWidget()
+        self.actions.setObjectName("flat")
+        self.actions.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
+        actions = QHBoxLayout(self.actions)
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(8)
+        self.expand = labeled_action(i18n.t("home_details"))
         self.expand.setCheckable(True)
         self.expand.toggled.connect(self._expand)
-        info.addWidget(self.expand)
-        info.addWidget(
-            icon_button(
-                "▦", i18n.t("calendar"), lambda: self.calendar_requested.emit(self.tracker.id)
+        actions.addWidget(self.expand)
+        actions.addWidget(
+            labeled_action(
+                i18n.t("calendar"), lambda: self.calendar_requested.emit(self.tracker.id), "calendar"
             )
         )
-        info.addWidget(
-            icon_button("↗", i18n.t("open"), lambda: self.open_requested.emit(self.tracker.id))
+        actions.addWidget(
+            labeled_action(i18n.t("open"), lambda: self.open_requested.emit(self.tracker.id), "open")
         )
-        root.addLayout(info)
+        root.addLayout(self.info)
+        self._actions_stacked = None
+        self._arrange_actions()
         self.rows = TaskRows(i18n)
         self.rows.changed.connect(self._mark)
         root.addWidget(self.rows)
@@ -258,6 +276,26 @@ class TrackerCard(QFrame):
         root.addWidget(self.description)
         self.update_snapshot(snapshot or tracker_snapshot(repository, tracker, date.today()))
 
+    def _arrange_actions(self):
+        # Keep the schedule readable when the dashboard uses narrow columns.
+        stacked = self.width() < 560
+        if stacked == self._actions_stacked:
+            return
+        self._actions_stacked = stacked
+        self.info.removeWidget(self.schedule)
+        self.info.removeWidget(self.actions)
+        self.info.setColumnStretch(0, 1)
+        if stacked:
+            self.info.addWidget(self.schedule, 0, 0, 1, 2)
+            self.info.addWidget(self.actions, 1, 0, 1, 2, Qt.AlignmentFlag.AlignRight)
+        else:
+            self.info.addWidget(self.schedule, 0, 0)
+            self.info.addWidget(self.actions, 0, 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._arrange_actions()
+
     def _expand(self, expanded):
         self.description.setVisible(expanded)
         self.rows.setVisible(not self.compact or expanded)
@@ -265,7 +303,7 @@ class TrackerCard(QFrame):
             (not self.compact or expanded)
             and (bool(self.snapshot.tasks) or self.snapshot.meta.quota_target is not None)
         )
-        self.expand.setText("⌃" if expanded else "⌄")
+        self.expand.setText(self.i18n.t("home_collapse" if expanded else "home_details"))
 
     def set_compact(self, compact):
         self.compact = compact
@@ -302,7 +340,7 @@ class TrackerCard(QFrame):
         self.setStyleSheet(f"QFrame#card {{ border-left: 3px solid {accent}; }}")
         self.title.setText(tracker.name)
         self.attention.setVisible(meta.needs_attention)
-        self.streak.setText(f"↗ {meta.streak}")
+        self.streak.setText(self.i18n.t("streak", value=meta.streak))
         self.streak.setToolTip(
             self.i18n.t("streak", value=f"{meta.streak} {self.i18n.t(meta.streak_unit)}")
         )
@@ -354,6 +392,7 @@ class PlannerCard(QFrame):
         self.repository, self.i18n = repository, i18n
         self.task = None
         self.setObjectName("card")
+        self.setProperty("oneOffTask", True)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -398,6 +437,8 @@ class PlannerCard(QFrame):
         )
         self.title.setText(task.title)
         stamp = local_date(task.due_date, self.i18n)
+        if task.due_time:
+            stamp += " · " + task.due_time
         items = [
             (
                 item["id"],
@@ -416,7 +457,7 @@ class PlannerCard(QFrame):
         self.subtitle.setText(
             (self.i18n.t("home_overdue", date=stamp) if overdue else stamp) + " · " + progress
         )
-        self.rows.update_rows(items, hide_done, allow_partial=not task.items)
+        self.rows.update_rows(items, hide_done)
         self.description.setText(task.description)
         self.expand.setVisible(bool(task.description))
 

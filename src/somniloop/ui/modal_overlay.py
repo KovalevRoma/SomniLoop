@@ -4,9 +4,12 @@ from PySide6.QtCore import QEvent, QEventLoop, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication,
+    QDialogButtonBox,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -25,6 +28,8 @@ class ModalOverlay(QWidget):
         self.loop = QEventLoop()
         self.closed = False
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setAutoFillBackground(False)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.disabled = [
             (child, child.isEnabled())
@@ -38,6 +43,7 @@ class ModalOverlay(QWidget):
         self.panel = QFrame(self)
         self.panel.setObjectName("panel")
         layout = QVBoxLayout(self.panel)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         layout.setContentsMargins(12, 8, 12, 12)
         title_row = QHBoxLayout()
         title = QLabel(dialog.windowTitle())
@@ -53,10 +59,22 @@ class ModalOverlay(QWidget):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         layout.addWidget(self.scroll, 1)
         self.preferred = dialog.sizeHint().expandedTo(dialog.minimumSize())
         if dialog.testAttribute(Qt.WidgetAttribute.WA_Resized):
             self.preferred = self.preferred.expandedTo(dialog.size())
+        self.minimum = dialog.minimumSize()
+        dialog.setMinimumWidth(0)
+        for form in dialog.findChildren(QFormLayout):
+            form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+            form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        # Keep standard actions reachable even when a long form needs scrolling.
+        self.buttons = dialog.findChild(QDialogButtonBox)
+        self.button_index = dialog.layout().indexOf(self.buttons) if self.buttons else -1
+        if self.button_index >= 0:
+            dialog.layout().removeWidget(self.buttons)
+            layout.addWidget(self.buttons)
         dialog.setParent(self.scroll, Qt.WindowType.Widget)
         self.scroll.setWidget(dialog)
         stack = getattr(host, "_modal_overlays", [])
@@ -90,6 +108,16 @@ class ModalOverlay(QWidget):
             self.arrange()
         if not self.host._modal_overlays or self.host._modal_overlays[-1] is not self:
             return False
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Escape
+            and isinstance(watched, QWidget)
+            and (watched is self or self.isAncestorOf(watched))
+            and QApplication.activePopupWidget() is None
+        ):
+            # The pinned footer is outside QDialog's subtree; Escape still rejects it.
+            self.dialog.reject()
+            return True
         if watched is self.host and event.type() == QEvent.Type.Close:
             self.dialog.reject()
             event.ignore()
@@ -122,6 +150,11 @@ class ModalOverlay(QWidget):
         self.host._modal_overlays.remove(self)
         self.scroll.takeWidget()
         if isValid(self.dialog):
+            if self.button_index >= 0:
+                self.panel.layout().removeWidget(self.buttons)
+                self.buttons.setParent(self.dialog)
+                self.dialog.layout().insertWidget(self.button_index, self.buttons)
+            self.dialog.setMinimumSize(self.minimum)
             parent = (
                 self.original_parent
                 if self.original_parent and isValid(self.original_parent)

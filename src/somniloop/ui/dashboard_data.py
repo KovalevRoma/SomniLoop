@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QDate, QLocale
 
@@ -25,6 +25,16 @@ def local_date(day, i18n, *, full=False):
     return locale.toString(
         QDate(day.year, day.month, day.day), "dddd, d MMMM yyyy" if full else "d MMM yyyy"
     )
+
+
+def planner_in_next_24_hours(task, now: datetime) -> bool:
+    """Include overdue tasks and the next 24 elapsed hours in local time.
+
+    A date without a time means the start of that day. Timestamps keep the
+    window at 24 hours even across local daylight-saving transitions.
+    """
+    due = datetime.fromisoformat(f"{task.due_date}T{task.due_time or '00:00'}")
+    return due.timestamp() <= now.timestamp() + 24 * 60 * 60
 
 
 @dataclass(eq=True)

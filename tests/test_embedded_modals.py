@@ -23,6 +23,7 @@ from somniloop.core.database import Repository
 from somniloop.core.i18n import I18n
 from somniloop.core.models import ScheduleType, TrackerMode
 from somniloop.ui.dashboard import Dashboard
+from somniloop.ui.dialogs import CreateTrackerDialog, SettingsDialog
 from somniloop.ui.personal_dialogs import PeopleDialog
 from somniloop.ui.planner import PlannerDialog
 from somniloop.ui.theme import stylesheet
@@ -104,9 +105,8 @@ def test_overlay_blocks_background_centers_resizes_and_restores_focus(app, repo)
             assert host.rect().contains(overlay.panel.geometry())
             assert (overlay.panel.geometry().center() - host.rect().center()).manhattanLength() <= 2
         dialog.title_edit.setText("saved")
-        box = dialog.findChild(QDialogButtonBox)
+        box = overlay.buttons
         save = box.button(QDialogButtonBox.StandardButton.Save)
-        overlay.scroll.ensureWidgetVisible(save)
         QTest.mouseClick(
             host.windowHandle(),
             Qt.MouseButton.LeftButton,
@@ -142,6 +142,63 @@ def test_nested_modal_keeps_outer_modal_active_and_escape_discards(app, repo):
 
     assert drive(outer, check_outer) == outer.DialogCode.Rejected
     assert host.centralWidget().isEnabled()
+    assert not repo.list_planner_tasks()
+    host.close()
+
+
+@pytest.mark.parametrize("kind", ["planner", "tracker", "settings"])
+@pytest.mark.parametrize("language", ["ru", "en"])
+def test_embedded_forms_fit_width_and_keep_footer_visible(app, repo, kind, language):
+    previous = app.styleSheet()
+    app.setStyleSheet(stylesheet("light"))
+    host, _, _ = host_window()
+    app.processEvents()
+    before = host.grab().toImage().pixelColor(2, 2)
+    makers = {
+        "planner": lambda: PlannerDialog(repo, I18n(language), parent=host),
+        "tracker": lambda: CreateTrackerDialog(I18n(language), host),
+        "settings": lambda: SettingsDialog(repo, I18n(language), host),
+    }
+    dialog = makers[kind]()
+
+    def check():
+        overlay = dialog._modal_overlay
+        for width, height in ((980, 650), (820, 560), (1280, 800)):
+            host.resize(width, height)
+            for _ in range(5):
+                app.processEvents()
+            assert host.rect().contains(overlay.panel.geometry())
+            assert (overlay.panel.geometry().center() - host.rect().center()).manhattanLength() <= 2
+            assert overlay.geometry() == host.rect()
+            assert overlay.scroll.horizontalScrollBar().maximum() == 0
+            assert dialog.width() <= overlay.scroll.viewport().width()
+            for button in overlay.buttons.buttons():
+                assert button.isVisible()
+                assert overlay.panel.rect().contains(button.mapTo(overlay.panel, button.rect().center()))
+        image = host.grab().toImage()
+        assert image.pixelColor(2, 2) != before
+        assert image.pixelColor(2, 2) == image.pixelColor(2, host.height() - 3)
+        overlay.buttons.button(QDialogButtonBox.StandardButton.Cancel).click()
+
+    try:
+        assert drive(dialog, check) == dialog.DialogCode.Rejected
+        assert dialog.findChild(QDialogButtonBox).parentWidget() is dialog
+    finally:
+        host.close()
+        app.setStyleSheet(previous)
+
+
+def test_escape_from_pinned_footer_discards_draft(app, repo):
+    host, _, _ = host_window()
+    dialog = PlannerDialog(repo, I18n("ru"), parent=host)
+
+    def check():
+        dialog.title_edit.setText("Do not save")
+        save = dialog._modal_overlay.buttons.button(QDialogButtonBox.StandardButton.Save)
+        save.setFocus()
+        QTest.keyClick(save, Qt.Key.Key_Escape)
+
+    assert drive(dialog, check) == dialog.DialogCode.Rejected
     assert not repo.list_planner_tasks()
     host.close()
 

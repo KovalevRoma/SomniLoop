@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from datetime import date, datetime
 
@@ -17,21 +18,25 @@ class PlanningRepository:
         description: str = "",
         items: list[str] | None = None,
         task_id: int | None = None,
+        due_time: str | None = None,
     ) -> int:
         if not title.strip():
             raise ValueError("A task needs a title")
+        # None preserves an existing time for older callers; an empty string clears it.
+        if due_time is not None and due_time != "" and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", due_time):
+            raise ValueError("Time must use HH:mm format")
         now = datetime.now().isoformat(timespec="seconds")
         with self.connection:
             if task_id is None:
                 cursor = self.connection.execute(
-                    "INSERT INTO planner_tasks(title, due_date, description, updated_at) VALUES (?, ?, ?, ?)",
-                    (title.strip(), due_date.isoformat(), description.strip(), now),
+                    "INSERT INTO planner_tasks(title, due_date, description, updated_at, due_time) VALUES (?, ?, ?, ?, ?)",
+                    (title.strip(), due_date.isoformat(), description.strip(), now, due_time or ""),
                 )
                 task_id = int(cursor.lastrowid)
             else:
                 self.connection.execute(
-                    "UPDATE planner_tasks SET title=?, due_date=?, description=?, updated_at=? WHERE id=?",
-                    (title.strip(), due_date.isoformat(), description.strip(), now, task_id),
+                    "UPDATE planner_tasks SET title=?, due_date=?, description=?, updated_at=?, due_time=COALESCE(?, due_time) WHERE id=?",
+                    (title.strip(), due_date.isoformat(), description.strip(), now, due_time, task_id),
                 )
             if items is not None:
                 previous = defaultdict(deque)
@@ -78,9 +83,10 @@ class PlanningRepository:
                 updated_at=row["updated_at"],
                 items=grouped[row["id"]],
                 state=TaskState.DONE if row["completed"] else TaskState(row["state"]),
+                due_time=row["due_time"],
             )
             for row in self.connection.execute(
-                f"SELECT p.* FROM planner_tasks p WHERE {condition} ORDER BY due_date, id",
+                f"SELECT p.* FROM planner_tasks p WHERE {condition} ORDER BY due_date, COALESCE(NULLIF(due_time,''),'24:00'), id",
                 parameters,
             )
         ]

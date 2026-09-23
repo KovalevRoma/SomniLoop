@@ -1,19 +1,20 @@
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtCore import QObject, Qt, QTime, Signal
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialogButtonBox, QScrollArea, QWidget
+from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QScrollArea, QWidget
 
 from somniloop.core.database import Repository
 from somniloop.core.i18n import I18n
 from somniloop.core.models import DayStatus, ScheduleType, TaskState, TrackerMode
 from somniloop.ui.action_feedback import ActionPulse, install_action_feedback
 from somniloop.ui.dashboard import Dashboard
-from somniloop.ui.dashboard_data import DashboardData
+from somniloop.ui.dashboard_data import DashboardData, planner_in_next_24_hours
 from somniloop.ui.dialogs import CreateTrackerDialog, SettingsDialog, TaskEditDialog
 from somniloop.ui.personal_dialogs import BioDialog
 from somniloop.ui.planner import PlannerDialog
@@ -73,7 +74,7 @@ def test_responsive_layout_uses_one_scroll_and_no_horizontal_overflow(
     )
     assert page.today.y() < page.columns.y()
     if wide:
-        assert 1.8 < page.library.width() / page.planner.width() < 2.2
+        assert 0.95 < page.library.width() / page.planner.width() < 1.05
     else:
         assert page.planner.y() > page.library.y() + page.library.height()
     assert not page.grab().isNull()
@@ -97,6 +98,180 @@ def test_empty_sections_stay_compact(app, repo):
     page.close()
 
 
+def test_equal_columns_keep_filters_and_schedule_readable_on_resize(app, repo):
+    previous = app.styleSheet()
+    app.setStyleSheet(stylesheet("light"))
+    identifier = habit(repo)
+    page = Dashboard(repo, I18n("ru"))
+    page.show()
+    for width in (980, 1920, 760, 980):
+        page.resize(width, 800)
+        for _ in range(6):
+            app.processEvents()
+        card = page.cards[identifier]
+        assert card.schedule.width() >= 180
+        assert page.filters.search.width() >= 180
+        assert not card.schedule.geometry().intersects(card.actions.geometry())
+        assert not page.filters.search.geometry().intersects(page.filters.order.geometry())
+        assert page.scroll.horizontalScrollBar().maximum() == 0
+        if width == 980:
+            assert page.filters.search.width() >= 300
+            assert card.actions.y() > card.schedule.y()
+        if width == 760:
+            assert not page.columns.wide
+    page.close()
+    app.setStyleSheet(previous)
+
+
+@pytest.mark.parametrize("day,time,expected", [
+    ("2026-09-22", "18:00", True),
+    ("2026-09-23", "23:59", True),
+    ("2026-09-24", "11:59", True),
+    ("2026-09-24", "12:00", True),
+    ("2026-09-24", "12:01", False),
+    ("2026-09-24", "", True),
+    ("2026-09-25", "", False),
+])
+def test_rolling_24_hour_boundary(day, time, expected):
+    task = SimpleNamespace(due_date=day, due_time=time)
+    assert planner_in_next_24_hours(task, datetime(2026, 9, 23, 12)) is expected
+
+
+def test_upcoming_task_enters_on_minute_tick_without_history_reload(app, repo, monkeypatch):
+    from somniloop.ui import dashboard_sections
+    from somniloop.ui.main_window import MainWindow
+
+    tomorrow = date.today() + timedelta(days=1)
+    identifier = repo.save_planner_task("Завтра вечером", tomorrow, due_time="18:00")
+    now = datetime.combine(date.today(), datetime.min.time()).replace(hour=17, minute=59, second=59)
+    clock = SimpleNamespace(now=lambda: now)
+    monkeypatch.setattr(dashboard_sections, "datetime", clock)
+    page = Dashboard(repo, I18n("ru"))
+    assert ("planner", identifier) not in page.today.visible_keys
+    clock.now = lambda: now + timedelta(seconds=1)
+    statements = []
+    repo.connection.set_trace_callback(statements.append)
+    MainWindow._check_day(SimpleNamespace(_current_day=date.today(), dashboard=page))
+    assert ("planner", identifier) in page.today.visible_keys
+    assert not statements
+    repo.connection.set_trace_callback(None)
+    page.today.widgets[("planner", identifier)].rows.rows[0].done.click()
+    assert repo.list_planner_tasks(True)[0].due_date == tomorrow.isoformat()
+    assert ("planner", identifier) not in page.today.visible_keys
+    page.today.hide_done.setChecked(False)
+    assert ("planner", identifier) in page.today.visible_keys
+    assert not page.findChildren(QLabel, "pageTitle")
+    assert any(label.text() == "Ближайшее" for label in page.findChildren(QLabel))
+    page.close()
+
+
+def test_hide_done_hides_whole_habit_and_restores_same_card(app, repo):
+    identifier = habit(repo, tasks=["Первое", "Второе"])
+    page = Dashboard(repo, I18n("ru"))
+    page.show()
+    page.filters.hide_done.setChecked(True)
+    card = page.cards[identifier]
+    tasks = repo.list_tasks(identifier)
+    repo.set_task_state(identifier, tasks[0].id, date.today(), TaskState.DONE)
+    page.refresh(changed_tracker=identifier)
+    assert not card.isHidden()
+    repo.set_task_state(identifier, tasks[1].id, date.today(), TaskState.DONE)
+    page.refresh(changed_tracker=identifier)
+    assert card.isHidden() and page.card_layout.count() == 0
+    assert not page.empty.isHidden()
+    page.filters.hide_done.setChecked(False)
+    assert page.cards[identifier] is card and not card.isHidden()
+    assert page.card_layout.count() == 1
+    page.close()
+
+
+def test_plans_and_oneoffs_share_agenda_without_moving_habits(app, repo):
+    identifier = habit(repo)
+    plan = repo.create_tracker("Поездка", "", TrackerMode.MANUAL, ScheduleType.MANUAL, {}, [])
+    day = date.today() + timedelta(days=2)
+    repo.add_manual_occurrence(plan, day, ["Билеты"])
+    task = repo.save_planner_task("Позвонить", day, due_time="10:00")
+    page = Dashboard(repo, I18n("ru"))
+    page.show()
+    assert set(page.cards) == {identifier}
+    assert set(page.planner.widgets) == {("plan", plan), task}
+    assert page.planner.cards.itemAt(1).widget() is page.planner.widgets[task]
+    opened = []
+    page.open_requested.connect(opened.append)
+    page.planner.widgets[("plan", plan)].open_requested.emit(plan)
+    assert opened == [plan]
+    page.planner.search.setText("Поездка")
+    assert page.planner.widgets[task].isHidden()
+    assert not page.planner.widgets[("plan", plan)].isHidden()
+    page.planner.search.clear()
+    assert not page.planner.widgets[task].isHidden()
+    page.close()
+
+
+def test_scrollbar_fades_without_layout_shift_and_reveals_on_movement(app, repo):
+    from PySide6.QtCore import QPoint
+
+    for index in range(20):
+        habit(repo, f"Привычка {index}")
+    page = Dashboard(repo, I18n("ru"))
+    page.resize(980, 700)
+    page.show()
+    app.processEvents()
+    bar = page.scroll.verticalScrollBar()
+    assert bar.maximum() > 0
+    width = page.scroll.viewport().width()
+    bar.idle.setInterval(40)
+    bar.fade.setDuration(20)
+    bar.setValue(40)
+    assert bar.opacity.opacity() == 1
+    QTest.qWait(120)
+    assert bar.opacity.opacity() == 0
+    assert page.scroll.viewport().width() == width
+    QTest.mouseMove(page.scroll.viewport(), QPoint(20, 20))
+    assert bar.opacity.opacity() == 1
+    bar.setSliderDown(True)
+    QTest.qWait(120)
+    assert bar.opacity.opacity() == 1
+    bar.setSliderDown(False)
+    page.close()
+    assert not bar.idle.isActive()
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_today_cards_compact_tinted_and_reflow_without_spanning(app, repo, theme):
+    old_style, old_theme = app.styleSheet(), app.property("somniloopTheme")
+    app.setProperty("somniloopTheme", theme)
+    app.setStyleSheet(stylesheet(theme))
+    for title in ("Занятия спортом", "Чтение", "Прогулки"):
+        habit(repo, title, ["100 приседаний", "100 отжиманий", "100 на пресс"])
+    page = Dashboard(repo, I18n("ru"))
+    page.show()
+    try:
+        for width, columns in ((980, 2), (1280, 3), (1920, 3), (720, 1), (980, 2)):
+            page.resize(width, 800)
+            for _ in range(5):
+                app.processEvents()
+            assert page.today.columns == columns
+            assert page.scroll.horizontalScrollBar().maximum() == 0
+            for card in page.today.widgets.values():
+                assert 280 <= card.width() <= 520
+                assert card.height() <= 170
+                assert page.today.grid.getItemPosition(page.today.grid.indexOf(card))[3] == 1
+                for row in card.rows.rows.values():
+                    assert row.label.x() - row.done.geometry().right() <= 12
+                    assert row.label.width() >= 100
+                    assert row.height() <= 38
+                # Sample an empty interior corner: it must be tinted, not plain white.
+                color = card.grab().toImage().pixelColor(card.width() - 20, card.height() - 8)
+                assert max(color.red(), color.green(), color.blue()) - min(
+                    color.red(), color.green(), color.blue()
+                ) >= 8
+    finally:
+        page.close()
+        app.setStyleSheet(old_style)
+        app.setProperty("somniloopTheme", old_theme)
+
+
 @pytest.mark.parametrize("language", ["ru", "en"])
 def test_checklist_binary_control_keyboard_and_legacy_marks(app, repo, language):
     from somniloop.ui.widgets import StateSelector
@@ -109,7 +284,7 @@ def test_checklist_binary_control_keyboard_and_legacy_marks(app, repo, language)
     page.show()
     app.processEvents()
     row = page.today.widgets[("tracker", identifier, date.today())].rows.rows[item.id]
-    assert row.partial.isHidden()
+    assert not hasattr(row, "partial")
     assert not row.done.isChecked()
     assert row.done.text() == I18n(language).t("home_mark_done")
     assert repo.day_summary(identifier, date.today()).tasks[0].state == TaskState.PARTIAL
@@ -130,12 +305,45 @@ def test_planner_checklist_has_no_partial_item_control(app, repo):
     identifier = repo.save_planner_task("Сборы", date.today(), items=["Документы", "Билеты"])
     page = Dashboard(repo, I18n("ru"))
     rows = page.today.widgets[("planner", identifier)].rows.rows
-    assert all(row.partial.isHidden() for row in rows.values())
+    assert all(not hasattr(row, "partial") for row in rows.values())
     next(iter(rows.values())).done.click()
     task = repo.list_planner_tasks()[0]
     assert task.state == TaskState.PARTIAL
     assert sum(item["done"] for item in task.items) == 1
     page.close()
+
+
+def test_timed_tasks_show_time_and_keep_chronological_order(app, repo):
+    late = repo.save_planner_task("Вечер", date.today(), due_time="19:30")
+    early = repo.save_planner_task("Утро", date.today(), due_time="08:00")
+    page = Dashboard(repo, I18n("ru"))
+    assert page.today.visible_keys == [("planner", early), ("planner", late)]
+    assert "19:30" in page.today.widgets[("planner", late)].subtitle.text()
+    assert page.today.widgets[("planner", late)].property("oneOffTask") is True
+    page.close()
+
+
+def test_date_picker_keeps_wheel_and_keyboard_without_spin_arrows(app):
+    from PySide6.QtCore import QDate, QPoint, QPointF
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QAbstractSpinBox
+
+    from somniloop.ui.controls import ScrollDateEdit
+
+    picker = ScrollDateEdit(QDate(2026, 9, 23))
+    picker.show()
+    app.processEvents()
+    assert picker.day_spin.buttonSymbols() == QAbstractSpinBox.ButtonSymbols.NoButtons
+    assert picker.year_spin.buttonSymbols() == QAbstractSpinBox.ButtonSymbols.NoButtons
+    pos = picker.day_spin.rect().center()
+    event = QWheelEvent(QPointF(pos), QPointF(picker.day_spin.mapToGlobal(pos)), QPoint(),
+                        QPoint(0, 120), Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+                        Qt.ScrollPhase.NoScrollPhase, False)
+    QApplication.sendEvent(picker.day_spin, event)
+    assert picker.date() == QDate(2026, 9, 24)
+    QTest.keyClick(picker.day_spin, Qt.Key.Key_Down)
+    assert picker.date() == QDate(2026, 9, 23)
+    picker.close()
 
 
 def test_today_contains_habit_overdue_plan_and_one_off_and_marks_real_occurrence(app, repo):
@@ -148,15 +356,14 @@ def test_today_contains_habit_overdue_plan_and_one_off_and_marks_real_occurrence
     assert ("tracker", identifier, date.today()) in page.today.widgets
     overdue = page.today.widgets[("tracker", plan, yesterday)]
     row = next(iter(overdue.rows.rows.values()))
-    assert row.partial.isHidden()
+    assert not hasattr(row, "partial")
     row.done.click()
     assert repo.day_summary(plan, yesterday).status == DayStatus.PARTIAL
     assert repo.day_summary(plan, date.today()).status == DayStatus.UNSCHEDULED
     row.done.click()
     assert repo.day_summary(plan, yesterday).tasks[0].state == TaskState.NOT_DONE
     widget = page.today.widgets[("planner", oneoff)]
-    widget.rows.rows[0].partial.click()
-    assert repo.list_planner_tasks()[0].state == TaskState.PARTIAL
+    assert not hasattr(widget.rows.rows[0], "partial")
     widget.rows.rows[0].done.click()
     assert not repo.list_planner_tasks()
     assert repo.list_planner_tasks(True)[0].completed
@@ -176,7 +383,7 @@ def test_sort_search_and_filter_reuse_cards(app, repo):
     assert page.card_layout.itemAt(0).widget() is cards[a]
     page.filters.search.clear()
     assert page.cards == cards
-    page.filters.buttons["manual"].click()
+    page.filters.search.setText("нет совпадений")
     assert not page.empty.isHidden()
     assert page.card_layout.count() == 0
     page.close()
@@ -296,7 +503,7 @@ def test_dashboard_language_and_creation_menu(app, repo, language):
     actions[0].trigger()
     actions[1].trigger()
     assert values == ["habit", "plan"]
-    assert page.filters.buttons["all"].text() == ("Все" if language == "ru" else "All")
+    assert page.filters.search.placeholderText() == I18n(language).t("home_search")
     assert "20" in page.date_label.text()
     if language == "en":
         assert not any("А" <= char <= "я" for char in page.date_label.text())
@@ -345,6 +552,8 @@ def test_planner_save_and_cancel_edit_using_keyboard(app, repo):
     parent.show()
     dialog = PlannerDialog(repo, I18n("ru"), parent=parent)
     dialog.title_edit.setText("Сохранить задачу")
+    dialog.has_time.setChecked(True)
+    dialog.time_edit.setTime(QTime(19, 45))
     dialog.show()
     app.processEvents()
     save = dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Save)
@@ -353,8 +562,11 @@ def test_planner_save_and_cancel_edit_using_keyboard(app, repo):
     assert len(repo.list_planner_tasks()) == 1
     assert parent.findChildren(ActionPulse)
     task = repo.list_planner_tasks()[0]
+    assert task.due_time == "19:45"
     edit = PlannerDialog(repo, I18n("ru"), task, parent)
     edit.title_edit.setText("Не сохранять правку")
+    assert edit.time_edit.time() == QTime(19, 45)
+    edit.has_time.setChecked(False)
     edit.show()
     app.processEvents()
     cancel = edit.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel)
@@ -363,6 +575,7 @@ def test_planner_save_and_cancel_edit_using_keyboard(app, repo):
     app.processEvents()
     assert not edit.isVisible()
     assert repo.list_planner_tasks()[0].title == task.title
+    assert repo.list_planner_tasks()[0].due_time == "19:45"
     parent.close()
 
 

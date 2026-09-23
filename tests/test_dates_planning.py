@@ -114,6 +114,52 @@ def test_planner_edit_preserves_only_matching_checks(repo):
     ]
 
 
+def test_planner_time_sort_edit_archive_and_export(repo):
+    day = date(2026, 9, 25)
+    untimed = repo.save_planner_task("Без времени", day)
+    late = repo.save_planner_task("Вечер", day, due_time="19:30")
+    early = repo.save_planner_task("Утро", day, due_time="09:05")
+    assert [task.id for task in repo.list_planner_tasks()] == [early, late, untimed]
+    repo.save_planner_task("Вечер обновлён", day, task_id=late)
+    assert repo.list_planner_tasks()[1].due_time == "19:30"
+    repo.archive_planner_task(late)
+    repo.restore_payload(repo.export_payload())
+    assert repo.list_planner_tasks(True)[0].due_time == "19:30"
+    repo.archive_planner_task(late, False)
+    repo.save_planner_task("Без времени теперь", day, task_id=late, due_time="")
+    assert next(task for task in repo.list_planner_tasks() if task.id == late).due_time == ""
+    old_export = repo.export_payload()
+    for task in old_export["tables"]["planner_tasks"]:
+        task.pop("due_time")
+    repo.restore_payload(old_export)
+    assert all(task.due_time == "" for task in repo.list_planner_tasks())
+
+
+@pytest.mark.parametrize("value", ["24:00", "12:60", "9:30", "noon", "12:30:00"])
+def test_planner_rejects_invalid_time(repo, value):
+    with pytest.raises(ValueError):
+        repo.save_planner_task("Invalid", date.today(), due_time=value)
+    assert not repo.list_planner_tasks()
+
+
+def test_planner_time_migrates_old_database_without_losing_task(tmp_path):
+    path = tmp_path / "old.db"
+    with sqlite3.connect(path) as connection:
+        connection.execute("""CREATE TABLE planner_tasks (
+            id INTEGER PRIMARY KEY, title TEXT NOT NULL, due_date TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '', completed INTEGER NOT NULL DEFAULT 0,
+            archived INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)""")
+        connection.execute("INSERT INTO planner_tasks(id,title,due_date,updated_at) VALUES (1,'Old','2026-09-25','2026-09-23')")
+    repository = Repository(path)
+    task = repository.list_planner_tasks()[0]
+    assert task.title == "Old" and task.due_time == ""
+    repository.save_planner_task(task.title, date(2026, 9, 25), task_id=1, due_time="00:00")
+    repository.close()
+    repository = Repository(path)
+    assert repository.list_planner_tasks()[0].due_time == "00:00"
+    repository.close()
+
+
 def test_archive_keeps_tracker_history(repo):
     tracker_id = repo.create_tracker(
         "Спорт", "", TrackerMode.REGULAR, ScheduleType.DAILY, {}, ["Тренировка"]

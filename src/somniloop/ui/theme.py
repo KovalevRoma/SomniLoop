@@ -116,28 +116,63 @@ QTabBar::tab:selected { background: #715ee8; color: white; }
 def stylesheet(theme: str) -> str:
     base = LIGHT_STYLE if theme == "light" else DARK_STYLE
     extra = """
-    QWidget#roundedWindow, QWidget#windowContent { background: transparent; }
+    QWidget#windowContent { background: transparent; }
+    QComboBox::drop-down {
+        subcontrol-origin: padding; subcontrol-position: top right;
+        width: 24px; border: none; background: transparent;
+        border-top-right-radius: 8px; border-bottom-right-radius: 8px;
+    }
+    QWidget#datePicker { background: transparent; }
+    QWidget#datePicker QSpinBox, QWidget#datePicker QComboBox, QTimeEdit#timePicker {
+        border-radius: 13px; min-height: 22px; padding: 7px 10px;
+        border: 1px solid #8171ad; background: #29253e; color: #f2f0ff;
+    }
+    QWidget#datePicker QComboBox::drop-down { border: none; width: 0px; }
+    QWidget#datePicker QComboBox::down-arrow { image: none; width: 0px; height: 0px; }
+    QWidget#datePicker QPushButton { border-radius: 13px; }
+    QTimeEdit#timePicker:disabled { color: #9394a8; }
     QFrame#notificationDrawer { border: 1px solid #9c8adb; border-radius: 16px; padding: 6px; }
     QLabel#timestamp { color: rgba(128, 126, 150, 175); font-size: 12px; }
     QLabel#weekNumber { background: rgba(128, 126, 150, 25); color: #92909f; border-radius: 8px; padding: 6px; }
     QProgressBar { border: none; border-radius: 5px; max-height: 10px; background: #ddd7ef; }
     QProgressBar::chunk { background: #806def; border-radius: 5px; }
-    QToolTip { padding: 7px; }
+    QToolTip {
+        background-color: #30283f; color: #f5efff; border: 1px solid #9a87bb;
+        border-radius: 8px; padding: 8px 10px; font-size: 13px; opacity: 255;
+    }
     QSplitter::handle { background: transparent; width: 8px; }
     """
     extra += (
-        "QFrame#notificationDrawer { background: #eee8ff; }"
+        "QFrame#notificationDrawer { background: #eee8ff; } QToolTip {background-color:#eee5fa; color:#30243f; border-color:#ab94c7;}"
         if theme == "light"
         else "QFrame#notificationDrawer { background: #252038; }"
     )
     # Static accent gradients keep the dashboard calm and add no animation timers.
     home = """
+    QWidget#dashboardSurface {
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+            stop:0 #19162c, stop:0.55 #141e2d, stop:1 #122b2b);
+    }
     QWidget#dashboard QFrame#panel {
         background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-            stop:0 #24223b, stop:0.55 #1b2030, stop:1 #19262c);
-        border-color: #49435f;
+            stop:0 #2c2447, stop:0.55 #242c40, stop:1 #203c3b);
+        border-color: #655784;
     }
-    QWidget#dashboard QFrame#card { background: #1c2130; border-color: #3d455c; }
+    QWidget#dashboard QFrame#card {
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+            stop:0 #503369, stop:0.5 #423c78, stop:1 #284e65);
+        border-color: #aa83df;
+    }
+    QWidget#dashboard QFrame#card[oneOffTask="true"] {
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+            stop:0 #573450, stop:1 #514329);
+        border-color: #c39291;
+    }
+    QLabel#dashboardDate { font-size: 18px; font-weight: 600; color: #d6d4fa; }
+    QWidget#dashboard QLabel#muted { color: #bdc6db; }
+    QWidget#dashboard QLineEdit, QWidget#dashboard QComboBox {
+        background: #262b44; border-color: #6c6388;
+    }
     QWidget#dashboard QFrame#card:hover { border-color: #8379b1; }
     QWidget#dashboard QPushButton#primary {
         background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #7967e4, stop:1 #585ac4);
@@ -148,7 +183,7 @@ def stylesheet(theme: str) -> str:
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #a28aef, stop:1 #65cbbb);
     }
     QWidget#dashboard QPushButton#completionToggle {
-        padding: 3px 10px; background: #242d3c; color: #d9f7ed; border: 1px solid #638c87;
+        padding: 3px 10px; background: #254b48; color: #e1fff3; border: 1px solid #79cdb3;
     }
     QWidget#dashboard QPushButton#completionToggle:checked {
         background: #244d46; color: #d9fff0; border-color: #74cbb0;
@@ -158,19 +193,41 @@ def stylesheet(theme: str) -> str:
     """
     if theme == "light":
         home += """
+        QWidget#datePicker QSpinBox, QWidget#datePicker QComboBox, QTimeEdit#timePicker {
+            background: #e5d9fa; color: #302548; border-color: #aa90d5;
+        }
+        QTimeEdit#timePicker:disabled { color: #6d6680; }
+        QLabel#dashboardDate { color: #514076; }
+        QWidget#dashboardSurface {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #e3d9f7, stop:0.55 #dce7f5, stop:1 #ceeee6);
+        }
         QWidget#dashboard QFrame#panel {
             background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                stop:0 #f4efff, stop:0.55 #fafaff, stop:1 #edf8f5);
-            border-color: #c9bde7;
+                stop:0 #ece2ff, stop:0.55 #e0eafa, stop:1 #d8f4eb);
+            border-color: #b8a0df;
         }
-        QWidget#dashboard QFrame#card { background: #ffffff; border-color: #d9d6e8; }
+        QWidget#dashboard QFrame#card {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #d4b6ff, stop:0.5 #cbbff8, stop:1 #b6dfef);
+            border-color: #9671ce;
+        }
+        QWidget#dashboard QFrame#card[oneOffTask="true"] {
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                stop:0 #f4bddd, stop:1 #f5d49d);
+            border-color: #cb98a2;
+        }
+        QWidget#dashboard QLabel#muted { color: #505a74; }
+        QWidget#dashboard QLineEdit, QWidget#dashboard QComboBox {
+            background: #e8def8; border-color: #b3a0d1;
+        }
         QWidget#dashboard QFrame#card:hover { border-color: #9b86c9; }
         QWidget#dashboard QProgressBar { background: #e2deef; }
         QWidget#dashboard QPushButton#completionToggle {
-            background: #f0faf6; color: #255448; border-color: #85b3a4;
+            background: #bcebdc; color: #234f44; border-color: #5d9e89;
         }
         QWidget#dashboard QPushButton#completionToggle:checked {
-            background: #d7f1e5; color: #1b5943; border-color: #579b80;
+            background: #8bdbbd; color: #194934; border-color: #46896e;
         }
         QWidget#dashboard QPushButton#completionToggle:hover { background: #cceade; }
         QWidget#dashboard QPushButton:focus { border: 2px solid #7962b7; }

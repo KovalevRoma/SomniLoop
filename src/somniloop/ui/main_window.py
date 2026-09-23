@@ -28,6 +28,7 @@ from .controls import RoundedMainWindow as QMainWindow
 from .controls import show_saved
 from .dashboard import Dashboard
 from .dialogs import CreateTrackerDialog, EditTrackerDialog, SettingsDialog
+from .icons import interface_icon
 from .knowledge_graph import KnowledgeGraphPage
 from .personal_dialogs import BioDialog, DiaryDialog, PeopleDialog
 from .planner import ArchiveDialog, NotificationDrawer
@@ -98,16 +99,25 @@ class MainWindow(QMainWindow):
         self.graph_button = QPushButton(self.i18n.t("knowledge"))
         self.graph_button.setCheckable(True)
         self.graph_button.clicked.connect(lambda: self._show_page(1))
-        settings = QPushButton("⚙")
-        settings.setFixedSize(36, 36)
+        settings = QPushButton()
+        settings.setIcon(interface_icon("settings"))
+        settings.setIconSize(QSize(28, 28))
+        settings.setFixedSize(48, 44)
         settings.setStyleSheet("padding:0;")
         settings.setToolTip(self.i18n.t("settings"))
         settings.setAccessibleName(self.i18n.t("settings"))
         settings.clicked.connect(self._settings)
         archive = QPushButton(self.i18n.t("archive"))
+        archive.setMinimumHeight(44)
+        archive.setStyleSheet("font-size:16px;")
         archive.setToolTip(self.i18n.t("archive"))
         archive.clicked.connect(self._archive)
-        self.notifications_button = QPushButton("🎂 0")
+        self.notifications_button = QPushButton("0")
+        self.notifications_button.setIcon(interface_icon("birthday"))
+        self.notifications_button.setIconSize(QSize(28, 28))
+        self.notifications_button.setMinimumSize(80, 44)
+        self.notifications_button.setStyleSheet("font-size:17px; padding:6px 12px;")
+        self.notifications_button.setAccessibleName(self.i18n.t("birthday_reminders"))
         self.notifications_button.setToolTip(self.i18n.t("birthday_reminders"))
         self.notifications_button.clicked.connect(
             lambda: self.notification_drawer.setVisible(not self.notification_drawer.isVisible())
@@ -124,7 +134,7 @@ class MainWindow(QMainWindow):
         root.addWidget(top_bar)
         self.notification_drawer = NotificationDrawer(self.repository, self.i18n)
         self.notification_drawer.count_changed.connect(
-            lambda count: self.notifications_button.setText(f"🎂 {count}")
+            lambda count: self.notifications_button.setText(str(count))
         )
         self.notification_drawer.refresh()
         if QApplication.instance().platformName() != "offscreen":
@@ -268,6 +278,9 @@ class MainWindow(QMainWindow):
             self._current_day = date.today()
             self.dashboard.refresh()
             self.notification_drawer.refresh()
+        else:
+            # Advance the rolling 24-hour queue without reloading tracker history.
+            self.dashboard.today.set_data(self.dashboard.data)
 
     def _settings(self) -> None:
         if self.graph_page.worker and self.graph_page.worker.isRunning():

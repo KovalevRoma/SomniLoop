@@ -7,8 +7,9 @@ import random
 import re
 
 from PySide6.QtCore import QDate, QElapsedTimer, QLocale, QRectF, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QPainter, QPainterPath, QRegion
+from PySide6.QtGui import QColor, QDesktopServices, QPainter
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QCheckBox,
     QComboBox,
@@ -36,43 +37,8 @@ class _RoundedWindow:
 
         install_action_feedback()
         self.setObjectName("roundedWindow")
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-
-    def paintEvent(self, event) -> None:
-        super().paintEvent(event)
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        light = QApplication.instance().property("somniloopTheme") == "light"
-        painter.setBrush(QColor("#f5f4fa" if light else "#11121a"))
-        if self.isMaximized() or self.isFullScreen():
-            painter.drawRect(self.rect())
-        else:
-            path = QPainterPath()
-            path.addRoundedRect(QRectF(self.rect()), 18, 18)
-            path.addRect(QRectF(0, 0, self.width(), 18))
-            path.setFillRule(Qt.FillRule.WindingFill)
-            painter.drawPath(path)
-
-    def _update_corners(self) -> None:
-        if self.isMaximized() or self.isFullScreen():
-            self.clearMask()
-            return
-        radius = 18
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(self.rect()), radius, radius)
-        # The top edge joins GNOME's native title bar without a second curve.
-        path.addRect(QRectF(0, 0, self.width(), radius))
-        path.setFillRule(Qt.FillRule.WindingFill)
-        self.setMask(QRegion(path.toFillPolygon().toPolygon()))
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        self._update_corners()
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._update_corners()
+        # Let the compositor own the outer frame and input region. Painting fake
+        # transparent corners inside native decorations leaves a rectangular seam.
 
 
 class RoundedDialog(QDialog):
@@ -193,6 +159,7 @@ class ScrollDateEdit(QWidget):
 
     def __init__(self, day: QDate | None = None, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("datePicker")
         self._updating = False
         self._include_year = True
         self._date = day if isinstance(day, QDate) and day.isValid() else QDate.currentDate()
@@ -217,6 +184,7 @@ class ScrollDateEdit(QWidget):
         self.year_spin.setRange(1800, 2300)
         self.year_spin.setMinimumWidth(90)
         for spin in (self.day_spin, self.year_spin):
+            spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
             spin.lineEdit().setReadOnly(True)
             spin.setKeyboardTracking(False)
             spin.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -289,6 +257,7 @@ class ScrollDateEdit(QWidget):
 class MonthSpinBox(QSpinBox):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
         self.setRange(1, 12)
         self.setWrapping(True)
         self.lineEdit().setReadOnly(True)

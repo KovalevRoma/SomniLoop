@@ -60,7 +60,7 @@ def test_add_menu_modal_workflow_with_window_routed_clicks(app, tmp_path, kind, 
             if action == "save"
             else QDialogButtonBox.StandardButton.Cancel
         )
-        button = dialog.findChild(QDialogButtonBox).button(standard)
+        button = dialog._modal_overlay.buttons.button(standard)
         routed_click(dialog, button)
         observations.append(not dialog.isVisible())
 

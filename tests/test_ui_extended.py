@@ -316,8 +316,10 @@ def test_main_window_has_archive_drawer_and_planner(app, tmp_path):
     window = MainWindow(repository)
     window.show()
     app.processEvents()
-    assert not window.mask().isEmpty()
-    assert window.grab().toImage().pixelColor(0, window.height() - 1).alpha() == 0
+    assert window.mask().isEmpty()
+    assert not window.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    assert window.grab().toImage().pixelColor(0, window.height() - 1).alpha() == 255
+    assert window.dashboard.date_label.font().pixelSize() >= 18
     assert window.dashboard.planner is not None
     assert window.notification_drawer.isHidden()
     assert any(button.text() == "Архив" for button in window.findChildren(QPushButton))

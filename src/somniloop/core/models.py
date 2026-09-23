@@ -149,3 +149,4 @@ class PlannerTask:
     updated_at: str
     items: list[dict[str, Any]] = field(default_factory=list)
     state: TaskState = TaskState.UNSET
+    due_time: str = ""
