@@ -44,6 +44,7 @@ class TrackerSnapshot:
     tasks: list[DayTask]
     occurrences: list[tuple[date, list[DayTask]]]
     next_date: date | None
+    as_of: date
 
 
 def tracker_snapshot(repository, tracker, today):
@@ -94,7 +95,7 @@ def tracker_snapshot(repository, tracker, today):
             ):
                 next_date = day
                 break
-    return TrackerSnapshot(tracker, meta, tasks, sorted(occurrences), next_date)
+    return TrackerSnapshot(tracker, meta, tasks, sorted(occurrences), next_date, today)
 
 
 class DashboardData:

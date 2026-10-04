@@ -38,3 +38,6 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Licensed Live2D downloads and locally compiled native artifacts.
+.live2d/

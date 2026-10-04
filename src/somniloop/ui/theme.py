@@ -4,7 +4,7 @@ DARK_STYLE = r"""
 QWidget {
     background: #11121a;
     color: #f2f0ff;
-    font-family: Inter, "Noto Sans", sans-serif;
+    font-family: "Ubuntu Sans", "Noto Sans", "Segoe UI", sans-serif;
     font-size: 14px;
 }
 QWidget#flat { background: transparent; }
@@ -76,7 +76,7 @@ QPushButton#partialButton:checked { background: #f2ddb6; color: #63491c; border-
 QWidget {
     background: #f5f4fa;
     color: #222332;
-    font-family: Inter, "Noto Sans", sans-serif;
+    font-family: "Ubuntu Sans", "Noto Sans", "Segoe UI", sans-serif;
     font-size: 14px;
 }
 QMainWindow, QDialog { background: #f5f4fa; }
@@ -116,6 +116,9 @@ QTabBar::tab:selected { background: #715ee8; color: white; }
 def stylesheet(theme: str) -> str:
     base = LIGHT_STYLE if theme == "light" else DARK_STYLE
     extra = """
+    QFrame#sectionDivider { background: #9483ba; border: none; border-radius: 2px; }
+    QListWidget::item { padding: 5px 6px; border-radius: 6px; }
+    QListWidget::item:selected { background: #715ee8; color: #ffffff; }
     QWidget#windowContent { background: transparent; }
     QComboBox::drop-down {
         subcontrol-origin: padding; subcontrol-position: top right;

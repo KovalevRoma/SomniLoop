@@ -259,6 +259,15 @@ examples — do not attach private chat exports or your personal database.
 
 See [CHANGELOG.md](CHANGELOG.md) for development history.
 
+## Optional Live2D character
+
+The `feature/animated-character` integration adds the official **Epsilon** sample
+as a live, transparent overlay inside SomniLoop. It uses Cubism SDK for Native,
+runs locally, and is configurable in Settings. Interaction is off by default so
+clicks pass through to the planner. Model/SDK downloads are not stored in Git.
+
+See [Live2D setup, controls, tests, and license notes](docs/live2d.md).
+
 ## License
 
 No license has been selected yet. Public availability, if enabled later, should not

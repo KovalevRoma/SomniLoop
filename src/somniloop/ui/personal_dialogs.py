@@ -10,7 +10,6 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLayout,
     QLineEdit,
@@ -31,6 +30,7 @@ from somniloop.core.dates import display_date, display_timestamp
 from somniloop.core.i18n import I18n
 from somniloop.knowledge.people import format_person_details
 
+from .activity_scrollbar import ActivityScrollBar
 from .controls import BirthdayEdit, polish_dialog_buttons, rich_details, show_saved
 from .controls import RoundedDialog as QDialog
 from .controls import ScrollDateEdit as QDateEdit
@@ -123,6 +123,7 @@ class BioDialog(QDialog):
         form = QFormLayout()
         self.name_edit = QLineEdit(self._original[0])
         self.bio_edit = SmartPlainTextEdit(self._original[1])
+        self.bio_edit.setVerticalScrollBar(ActivityScrollBar(self.bio_edit))
         self.bio_edit.setPlaceholderText(i18n.t("bio_placeholder"))
         form.addRow(i18n.t("your_name"), self.name_edit)
         form.addRow(i18n.t("bio"), self.bio_edit)
@@ -373,6 +374,64 @@ class DiaryDialog(QDialog):
         super().reject()
 
 
+class MergePersonDialog(QDialog):
+    """Searchable, embedded duplicate picker with explicit confirmation."""
+
+    def __init__(self, current, candidates, i18n, parent=None):
+        super().__init__(parent)
+        ru = i18n.language == "ru"
+        self.setWindowTitle("Объединить дубли" if ru else "Merge duplicates")
+        self.resize(580, 420)
+        root = QVBoxLayout(self)
+        hint = QLabel(
+            f"Выбери дубль для «{current.name}». Основной останется текущая запись; заметки и история сохранятся."
+            if ru else f"Choose a duplicate of {current.name}. The current record, notes and history will be retained."
+        )
+        hint.setWordWrap(True)
+        root.addWidget(hint)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Поиск по имени или описанию…" if ru else "Search by name or description…")
+        root.addWidget(self.search)
+        self.people = QListWidget()
+        self.people.setWordWrap(True)
+        self.people.setVerticalScrollBar(ActivityScrollBar(self.people))
+        for person in candidates:
+            item = QListWidgetItem(f"{person.name}\n{person.relationship or '—'} · #{person.id}")
+            item.setData(Qt.ItemDataRole.UserRole, person.id)
+            self.people.addItem(item)
+        root.addWidget(self.people, 1)
+        self.confirmation = QLabel()
+        self.confirmation.setWordWrap(True)
+        root.addWidget(self.confirmation)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        self.confirm = buttons.button(QDialogButtonBox.StandardButton.Save)
+        self.confirm.setText("Объединить выбранные записи" if ru else "Merge selected records")
+        self.confirm.setEnabled(False)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(i18n.t("cancel"))
+        polish_dialog_buttons(buttons)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+        self.people.currentItemChanged.connect(lambda item, _: self._select(item))
+        self.search.textChanged.connect(self._filter)
+
+    def _select(self, item):
+        self.confirm.setEnabled(item is not None and not item.isHidden())
+        self.confirmation.setText(item.text() if item else "")
+
+    def _filter(self, text):
+        words = text.casefold().split()
+        for index in range(self.people.count()):
+            item = self.people.item(index)
+            item.setHidden(not all(word in item.text().casefold() for word in words))
+        if self.people.currentItem() and self.people.currentItem().isHidden():
+            self.people.setCurrentRow(-1)
+
+    def selected_id(self):
+        item = self.people.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item and not item.isHidden() else None
+
+
 class PeopleDialog(QDialog):
     data_changed = Signal()
 
@@ -414,9 +473,22 @@ class PeopleDialog(QDialog):
         splitter.setChildrenCollapsible(False)
         self.person_list = QListWidget()
         self.person_list.setMinimumWidth(200)
-        self.person_list.setMaximumWidth(240)
+        self.person_list.setMaximumWidth(300)
+        self.person_list.setWordWrap(True)
+        self.person_list.setSpacing(3)
+        self.person_list.setVerticalScrollBar(ActivityScrollBar(self.person_list))
         self.person_list.currentItemChanged.connect(self._selection_changed)
-        splitter.addWidget(self.person_list)
+        sidebar = QWidget()
+        side_layout = QVBoxLayout(sidebar)
+        side_layout.setContentsMargins(0, 0, 0, 0)
+        self.people_search = QLineEdit()
+        self.people_search.setPlaceholderText("Поиск людей…" if i18n.language == "ru" else "Search people…")
+        self.people_search.setClearButtonEnabled(True)
+        self.people_search.textChanged.connect(self._filter_people)
+        side_layout.addWidget(self.people_search)
+        side_layout.addWidget(self.person_list)
+        sidebar.setMaximumWidth(300)
+        splitter.addWidget(sidebar)
 
         editor = QWidget()
         editor_layout = QVBoxLayout(editor)
@@ -460,6 +532,7 @@ class PeopleDialog(QDialog):
         story_title.setObjectName("sectionTitle")
         editor_layout.addWidget(story_title)
         self.story_edit = SmartPlainTextEdit()
+        self.story_edit.setVerticalScrollBar(ActivityScrollBar(self.story_edit))
         self.story_edit.setPlaceholderText(i18n.t("person_story_placeholder"))
         self.story_edit.setMinimumHeight(130)
         editor_layout.addWidget(self.story_edit, 1)
@@ -487,6 +560,7 @@ class PeopleDialog(QDialog):
         facts_hint.setWordWrap(True)
         editor_layout.addWidget(facts_hint)
         self.facts_view = QTextBrowser()
+        self.facts_view.setVerticalScrollBar(ActivityScrollBar(self.facts_view))
         self.facts_view.setMinimumHeight(130)
         editor_layout.addWidget(self.facts_view, 1)
         self.clarifications_label = QLabel()
@@ -501,6 +575,7 @@ class PeopleDialog(QDialog):
         self.updated_label.setObjectName("muted")
         editor_layout.addWidget(self.updated_label)
         self.editor_scroll = QScrollArea()
+        self.editor_scroll.setVerticalScrollBar(ActivityScrollBar(self.editor_scroll))
         self.editor_scroll.setWidgetResizable(True)
         self.editor_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.editor_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -525,6 +600,7 @@ class PeopleDialog(QDialog):
         selected_item: QListWidgetItem | None = None
         for person in self.repository.list_people(managed_only=True):
             item = QListWidgetItem(person.name)
+            item.setToolTip(f"{person.name}\n{person.relationship}\n{person.contact}")
             item.setData(Qt.ItemDataRole.UserRole, person.id)
             self.person_list.addItem(item)
             if person.id == select_id:
@@ -536,6 +612,13 @@ class PeopleDialog(QDialog):
             self.person_list.setCurrentRow(0)
         else:
             self._clear_editor()
+        self._filter_people(self.people_search.text())
+
+    def _filter_people(self, text):
+        words = text.casefold().replace("ё", "е").split()
+        for index in range(self.person_list.count()):
+            item = self.person_list.item(index)
+            item.setHidden(not all(word in item.toolTip().casefold().replace("ё", "е") for word in words))
 
     def _clear_editor(self) -> None:
         self._loading = True
@@ -687,31 +770,11 @@ class PeopleDialog(QDialog):
         ]
         if not candidates:
             return
-        labels = [
-            f"{person.name} · {person.relationship or 'без описания'} · #{person.id}"
-            for person in candidates
-        ]
-        selected, ok = QInputDialog.getItem(
-            self,
-            "Объединить дубли",
-            "Выбери вторую запись. Она будет объединена с текущей, история сохранится:",
-            labels,
-            0,
-            False,
-        )
-        if not ok:
-            return
-        duplicate = candidates[labels.index(selected)]
         current = self.repository.get_person(self.current_person_id)
-        answer = QMessageBox.question(
-            self,
-            "Объединить дубли",
-            f"Объединить «{duplicate.name}» с «{current.name}»?\n"
-            "Основной останется текущая запись; заметки и история будут сохранены.",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        dialog = MergePersonDialog(current, candidates, self.i18n, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.selected_id() is None:
             return
-        person_id = self.repository.merge_people(current.id, duplicate.id)
+        person_id = self.repository.merge_people(current.id, dialog.selected_id())
         self.data_changed.emit()
         self._reload_list(person_id)
         show_saved(self, "Записи объединены")

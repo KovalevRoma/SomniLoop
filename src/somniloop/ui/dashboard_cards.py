@@ -319,6 +319,9 @@ class TrackerCard(QFrame):
         self.data_changed.emit()
 
     def _mark(self, task_id, state):
+        if self.snapshot.as_of != date.today():
+            self.tracker_changed.emit(self.tracker.id)
+            return
         self.repository.set_task_state(self.tracker.id, task_id, date.today(), state)
         self.update_snapshot(tracker_snapshot(self.repository, self.tracker, date.today()))
         self.tracker_changed.emit(self.tracker.id)

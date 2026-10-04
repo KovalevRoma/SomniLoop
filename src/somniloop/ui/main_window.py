@@ -51,8 +51,12 @@ class MainWindow(QMainWindow):
         self.day_timer.setInterval(60000)
         self.day_timer.timeout.connect(self._check_day)
         self.day_timer.start()
+        QApplication.instance().applicationStateChanged.connect(self._application_state_changed)
 
     def _rebuild_ui(self) -> None:
+        if hasattr(self, "character"):
+            self.character.dispose()
+            self.character.deleteLater()
         if hasattr(self, "graph_page"):
             self.graph_page.graph_view.save_state()
             self.graph_page.graph_view.state.repository = None
@@ -163,6 +167,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root_widget)
         if old:
             old.deleteLater()
+        from somniloop.live2d.overlay import Live2DOverlay
+        from somniloop.live2d.resources import CharacterConfig
+
+        self.character = Live2DOverlay(self, CharacterConfig.load(self.repository))
+        self.dashboard.task_completed.connect(self.character.taskCompleted)
+        self.dashboard.feedback_invalidated.connect(self.character.reactions.cancel)
 
     def _show_page(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
@@ -273,6 +283,10 @@ class MainWindow(QMainWindow):
         dialog.data_changed.connect(self._data_changed)
         dialog.exec()
 
+    def _application_state_changed(self, state) -> None:
+        if state == Qt.ApplicationState.ApplicationActive and hasattr(self, "dashboard"):
+            self._check_day()
+
     def _check_day(self) -> None:
         if date.today() != self._current_day:
             self._current_day = date.today()
@@ -301,6 +315,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.day_timer.stop()
+        self.character.dispose()
         self.graph_page.graph_view.save_state()
         self.graph_page.graph_view.state.repository = None
         self.repository.close()

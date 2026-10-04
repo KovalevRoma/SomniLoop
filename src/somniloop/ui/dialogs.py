@@ -699,6 +699,10 @@ class SettingsDialog(QDialog):
         self.setWindowTitle(i18n.t("settings"))
         self.setMinimumWidth(520)
         root = QVBoxLayout(self)
+        from somniloop.live2d.settings import CharacterSettings
+
+        self.character_settings = CharacterSettings(repository, i18n, self)
+        root.addWidget(self.character_settings)
         form = QFormLayout()
         root.addLayout(form)
         self.theme_combo = QComboBox()
@@ -1021,6 +1025,7 @@ class SettingsDialog(QDialog):
         self.repository.set_setting("language", self.language_combo.currentData())
         self.repository.set_setting("theme", self.theme_combo.currentData())
         self.repository.set_setting("model_path", self.model_edit.text().strip())
+        self.character_settings.save()
         self.settings_saved.emit()
         self.accept()
 

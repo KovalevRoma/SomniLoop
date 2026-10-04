@@ -398,7 +398,7 @@ TRANSLATIONS["ru"].update(
         "home_plan": "План",
         "home_library": "Привычки",
         "home_search": "Поиск привычек…",
-        "home_sort_attention": "Сначала требующие отметки",
+        "home_sort_attention": "Требуют отметки",
         "home_sort_date": "По ближайшей дате",
         "home_sort_streak": "По серии",
         "home_sort_name": "По названию",

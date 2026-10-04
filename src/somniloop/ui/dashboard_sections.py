@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtGui import QPainter, QPalette, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -24,6 +25,19 @@ from .dashboard_cards import PlannerCard, TaskRows, VisibleCheckBox, WrapLabel, 
 from .dashboard_data import local_date, planner_in_next_24_hours
 
 
+class SortComboBox(QComboBox):
+    """Draw a legible disclosure arrow independently of the platform theme."""
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(self.palette().color(QPalette.ColorRole.Text), 1.8))
+        x, y = self.width() - 16, self.height() / 2
+        painter.drawLine(QPointF(x - 4, y - 2), QPointF(x, y + 2))
+        painter.drawLine(QPointF(x, y + 2), QPointF(x + 4, y - 2))
+
+
 class DashboardFilters(QFrame):
     changed = Signal()
 
@@ -38,13 +52,16 @@ class DashboardFilters(QFrame):
         self.search.setPlaceholderText(i18n.t("home_search"))
         self.search.setAccessibleName(i18n.t("home_search"))
         self.search.textChanged.connect(self.changed)
-        self.order = QComboBox()
+        self.order = SortComboBox()
         self.order.setMinimumContentsLength(10)
         self.order.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.order.setAccessibleName(i18n.t("home_sort"))
         for key in ("attention", "date", "streak", "name"):
             self.order.addItem(i18n.t("home_sort_" + key), key)
         self.order.currentIndexChanged.connect(self.changed)
+        self.order.setStyleSheet("QComboBox { padding-right: 28px; } QComboBox::drop-down { width: 24px; } QComboBox::down-arrow { image: none; }")
+        self.order.setToolTip(i18n.t("home_sort"))
+        self.order.view().setMinimumWidth(max(self.order.fontMetrics().horizontalAdvance(self.order.itemText(i)) for i in range(self.order.count())) + 48)
         self.hide_done = VisibleCheckBox(i18n.t("home_hide_done"))
         self.hide_done.toggled.connect(self.changed)
         self.controls = QGridLayout()
@@ -131,6 +148,11 @@ class TodayOccurrence(QFrame):
         )
 
     def _mark(self, identifier, state):
+        tracker = self.repository.get_tracker(self.tracker_id)
+        if tracker.mode == TrackerMode.REGULAR and self.day != date.today():
+            # A stale card must never write yesterday's mark after midnight.
+            self.changed.emit(self.tracker_id)
+            return
         self.repository.set_task_state(self.tracker_id, identifier, self.day, state)
         self.changed.emit(self.tracker_id)
 
@@ -145,8 +167,8 @@ class TodayBlock(QFrame):
         self.repository, self.i18n = repository, i18n
         self.setObjectName("panel")
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 12, 12, 12)
-        root.setSpacing(8)
+        root.setContentsMargins(12, 8, 12, 8)
+        root.setSpacing(6)
         header = QHBoxLayout()
         title = QLabel(i18n.t("home_nearest"))
         title.setObjectName("sectionTitle")
@@ -245,6 +267,8 @@ class TodayBlock(QFrame):
                     widget.changed.connect(self.tracker_changed)
                 else:
                     widget = PlannerCard(self.repository, record, self.i18n, self)
+                    widget.layout().setContentsMargins(12, 8, 12, 8)
+                    widget.layout().setSpacing(4)
                     widget.changed.connect(self.planner_changed)
                     widget.edit_requested.connect(self.edit_planner)
                 self.widgets[key] = widget

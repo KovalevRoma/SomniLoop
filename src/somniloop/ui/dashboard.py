@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from somniloop.core.models import TaskState, TrackerMode
+from somniloop.live2d.reactions import CompletionMonitor
 
 from .activity_scrollbar import ActivityScrollBar
 from .dashboard_cards import TrackerCard, WrapLabel
@@ -32,6 +33,8 @@ class ResponsiveColumns(QWidget):
         super().__init__()
         self.setObjectName("flat")
         self.primary, self.secondary = primary, secondary
+        self.divider = QFrame()
+        self.divider.setObjectName("sectionDivider")
         self.wide = None
         self.grid = QGridLayout(self)
         self.grid.setContentsMargins(0, 0, 0, 0)
@@ -44,12 +47,21 @@ class ResponsiveColumns(QWidget):
         self.wide = wide
         self.grid.removeWidget(self.primary)
         self.grid.removeWidget(self.secondary)
+        self.grid.removeWidget(self.divider)
+        self.divider.setMinimumSize(0, 0)
+        self.divider.setMaximumSize(16777215, 16777215)
+        if wide:
+            self.divider.setFixedWidth(4)
+        else:
+            self.divider.setFixedHeight(4)
         self.grid.addWidget(self.primary, 0, 0, alignment=Qt.AlignmentFlag.AlignTop)
+        self.grid.addWidget(self.divider, 0 if wide else 1, 1 if wide else 0)
         self.grid.addWidget(
-            self.secondary, 0 if wide else 1, 1 if wide else 0, alignment=Qt.AlignmentFlag.AlignTop
+            self.secondary, 0 if wide else 2, 2 if wide else 0, alignment=Qt.AlignmentFlag.AlignTop
         )
         self.grid.setColumnStretch(0, 1)
-        self.grid.setColumnStretch(1, 1 if wide else 0)
+        self.grid.setColumnStretch(1, 0)
+        self.grid.setColumnStretch(2, 1 if wide else 0)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -57,6 +69,8 @@ class ResponsiveColumns(QWidget):
 
 
 class Dashboard(QWidget):
+    task_completed = Signal(bool)
+    feedback_invalidated = Signal()
     data_changed = Signal()
     new_requested = Signal()
     create_requested = Signal(str)
@@ -118,6 +132,10 @@ class Dashboard(QWidget):
         self.today.planner_changed.connect(self._planner_changed)
         self.today.edit_planner.connect(self._edit_planner)
         content.addWidget(self.today)
+        divider = QFrame()
+        divider.setObjectName("sectionDivider")
+        divider.setFixedHeight(4)
+        content.addWidget(divider)
         self.library = QFrame()
         self.library.setObjectName("panel")
         self.library.setMinimumWidth(0)
@@ -172,6 +190,13 @@ class Dashboard(QWidget):
 
     def refresh(self, changed_tracker=None, planner_only=False):
         self.data.refresh(changed_tracker, planner_only)
+        if not hasattr(self, "_completion_monitor"):
+            self._completion_monitor = CompletionMonitor()
+        reaction = self._completion_monitor.observe(self.data)
+        if self._completion_monitor.invalidated:
+            self.feedback_invalidated.emit()
+        if reaction is not None:
+            self.task_completed.emit(reaction)
         self.date_label.setText(local_date(self.data.today, self.i18n, full=True))
         self.today.set_data(self.data)
         self.planner.set_tasks(

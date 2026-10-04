@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from .activity_scrollbar import ActivityScrollBar
+
 
 class ModalOverlay(QWidget):
     def __init__(self, dialog, host):
@@ -57,6 +59,7 @@ class ModalOverlay(QWidget):
         title_row.addWidget(close)
         layout.addLayout(title_row)
         self.scroll = QScrollArea()
+        self.scroll.setVerticalScrollBar(ActivityScrollBar(self.scroll))
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -168,6 +171,10 @@ class ModalOverlay(QWidget):
         if self.previous_focus and isValid(self.previous_focus) and self.previous_focus.isEnabled():
             self.previous_focus.setFocus(Qt.FocusReason.OtherFocusReason)
         self.loop.quit()
+        # Release Python references to the parent/dialog before deferred C++ deletion.
+        # Otherwise cyclic GC can destroy the host while its overlay is being destroyed.
+        self.disabled.clear()
+        self.previous_focus = self.original_parent = self.dialog = self.host = None
         self.deleteLater()
 
 
