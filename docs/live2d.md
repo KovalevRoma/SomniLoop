@@ -47,7 +47,8 @@ an isolated Qt OpenGL context, offscreen surface and framebuffer. `bridge.cpp`
 uses the official Cubism Framework for MOC3 loading, texture rendering, motions,
 expressions, eye blinking, breathing, gaze and physics.
 
-The model is evaluated and rendered live at up to 30 FPS. Qt composites that
+The model is evaluated and rendered live at approximately 60 FPS (a precise
+16 ms timer; actual throughput depends on the GPU and GUI thread). Qt composites that
 frame with alpha over the existing widgets. A small GPU-to-CPU frame readback
 is intentional: it avoids native child-window stacking problems with the app's
 embedded dialogs. This is a live render target, not a stored animation.
@@ -73,7 +74,7 @@ Settings → **Live2D character — Epsilon** (Russian labels are also provided)
 - Right/bottom offsets: logical pixels, clamped to keep the character inside.
 - Opacity: 0.1–1.0.
 - Idle animations: replay the shipped idle clip; stop after disabling.
-- Interaction: cursor-following gaze and zone-specific touch/stroke expressions.
+- Interaction: cursor-following gaze, hover motions and zone-specific tap expressions.
 
 Interaction is off by default: every click passes through. When enabled, an
 alpha-derived silhouette mask limits interception to the character, not its
@@ -99,17 +100,19 @@ region, not a separate rear-facing mesh.
 
 Rules, in priority order:
 
-1. The fifth consecutive repetition of the same zone/gesture produces `Angry`.
-2. Chest, hips/shorts and legs normally produce `Angry`. Chest or hips immediately
+1. Head and cheek taps always produce `Smile` and do not count as intrusive touching.
+2. The fifth consecutive lower-body tap plays `Tap/3`. Other excessive touching
+   (five successive taps in one zone, or five taps within ten seconds) plays `Shake/1`.
+   Sensitive-zone excess displays `Disgust` using the existing `Angry` expression;
+   other excess produces `Angry`. Hips and legs count as one lower-body zone.
+3. Chest, hips/shorts and legs normally produce `Angry`. Chest or hips immediately
    following an active `Smile` produce `Blushing` instead; legs still produce `Angry`.
-3. Stroking the head or cheek produces `Smile`.
 4. An ordinary tap after at least 60 seconds without contact (including the first
    contact) produces `Surprised`. Recent ordinary taps otherwise keep the emotion.
 
-To stroke, hold the left button, move at least 12 logical pixels (scaled for a
-larger character), then release within the same zone. One drag is one stroke,
-regardless of how many mouse-move events it generates. Leaving the zone cancels
-the gesture. Changing zone/gesture or waiting 60 seconds resets the repetition
+Click and release in the same zone to tap. Moving more than eight logical pixels
+or leaving the zone cancels the gesture; swipes have no assigned reaction.
+Changing zone or waiting 60 seconds resets the repetition
 count. Touch feedback temporarily takes priority over task-completion feedback.
 All state is local and ephemeral; no touch history is saved.
 
@@ -118,6 +121,36 @@ The native bridge adds `sl_part_bounds`; rebuild it with
 app to load the rebuilt library.
 
 ## Animation controller
+
+The status badge supports Relaxed, Happy, Surprised, Annoyed, Blushing, Sad and
+Disgusted (Russian: Спокойна, Рада, Удивлена, Сердится, Смущена, Грустит,
+Отвращение). Contextual statuses do not require an identically named model resource:
+`Disgust` uses the existing Angry expression for excessive sensitive-zone touching.
+Idle and archiving display Relaxed; head hover, affection, task completion,
+creation and settings saves display Happy; body hover displays Surprised;
+explicit failure displays Sad. Blushing follows a happy state and a chest/hips tap.
+Temporary test clips display Motion preview (Просмотр движения) until they finish.
+Event statuses expire back to Relaxed; expressions are cleared on expiry as well.
+
+### Temporary motion preview buttons
+
+The temporary blue review column is disabled by default. Epsilon uses the freed
+space and returns to the normal lower-right placement. If enabled for development,
+the column lists all 13 non-greeting/non-idle motions: `Tap/1..3` and
+both clips of `Flick3`, `FlickUp`, `FlickDown`, `Flick` and `Shake`. Indices are
+zero-based; the tooltip shows the actual filename. Clicking starts that clip;
+clicking another button switches clips. The active button is highlighted.
+
+During preview, automatic task/touch reactions and cursor tracking are suspended,
+and any expression overlay is cleared. Physics and breathing continue. Preview
+time advances with rendered simulation time, so minimizing the window does not
+prematurely release the preview. Normal behavior resumes after the clip finishes.
+The column stays inside the window, scrolls if height is limited and hides with
+the character/modals. It works even with character touch interaction disabled.
+
+This is deliberately isolated in `motion_preview.py`. Set `SHOW_MOTION_PREVIEW`
+to `True` in `overlay.py` to restore the developer-only review column.
+It does not change stored preferences or model assets.
 
 ```python
 character = window.character
@@ -147,19 +180,55 @@ Actual expressions: `Angry.exp3.json`, `Blushing.exp3.json`, `f01.exp3.json`,
 
 There is no `Greeting` clip in Epsilon: the startup greeting uses existing
 `Tap/0` with `Smile.exp3.json`. Non-looping motions return to the shipped idle
-motion when idle is enabled. A random idle clip is requested every 20–40 seconds
-(Epsilon supplies only one idle clip). Expressions return to neutral after five
+motion when idle is enabled. A random `Flick3/0` or `Flick3/1` is requested every
+6–10 seconds while visible, deferred during higher-priority reactions or previews.
+Expressions return to neutral after five
 seconds, or earlier via `resetExpression()`. Eyes blink automatically and the
 SDK simulates breathing and the model's four hair-physics outputs. Audio is not
 included in Epsilon's manifest. Optional spoken feedback uses the local system
 speech engine, not an audio asset from the model.
 
+### Activity and pointer motions
+
+- Explicitly marking a task `NOT_DONE`: random `Tap/1`, `FlickDown/0` or `FlickDown/1`.
+  A new period's default unset state does not trigger this reaction.
+- Creating a tracker/task/checklist item or saving settings: `FlickUp/0`.
+- Archiving a tracker/task (including automatic planner completion): `FlickUp/1`.
+- Lower-body tap: `Tap/2`; fifth successive lower-body tap: `Tap/3`.
+- Entering the head with the pointer: `FlickUp/0` (welcoming affection).
+- Entering the chest with the pointer: `Flick/0`; hips/legs: `Shake/0`.
+  Hover is edge-triggered, with a two-second cooldown; stationary pointers do not retrigger.
+
+Manual previews have highest priority, then taps/application events, hover, and
+ambient motions. Activity notifications are emitted after database commits and
+delivered to Qt asynchronously. During dialogs, the latest notification is kept
+for up to 30 seconds; bulk changes coalesce rather than building an animation queue.
+Disable Activity reactions or Interaction in character settings independently.
+
 ## Quality and task feedback
 
+Cursor targets use frame-rate-independent exponential smoothing (85 ms time
+constant), followed by Cubism's existing acceleration-limited head tracking.
+Motion and expression fades have a 350 ms minimum, preserving longer authored
+fades. Expression changes and resets crossfade through Cubism instead of abruptly
+stopping the expression manager. Authored motion timing and physics stay unchanged.
+Rendering still pauses while the character is hidden or a modal dialog is open.
+
 The character renders at twice the physical pixel resolution and is smoothly
-downsampled by Qt. The longest render-buffer edge is capped at 1536 pixels to
+downsampled on the GPU before readback at the display's physical resolution.
+This retains supersampling while transferring roughly four times fewer pixels
+to Qt and avoiding a CPU resize on each paint. Both framebuffer objects are reused
+until their sizes change. OpenGL implementations without framebuffer blit retain
+the original full-resolution readback/Qt scaling path.
+The longest render-buffer edge is capped at 1536 pixels to
 bound GPU memory and readback work. Original model textures remain unchanged;
 supersampling smooths edges but cannot invent missing texture detail.
+
+Measure render/readback and Qt painting locally with
+`QT_QPA_PLATFORM=wayland .venv/bin/python tools/benchmark_live2d.py` (old path)
+and the same command with `--gpu-downsample` (current overlay path). This benchmark
+uses the real model without opening the user database; it reports median and p95
+frame costs, not guaranteed on-screen FPS.
 
 Task completion triggers the real `Smile` expression and a subtle head movement.
 Completing all currently due checklist items extends the smile. The controller

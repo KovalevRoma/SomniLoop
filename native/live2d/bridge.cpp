@@ -143,6 +143,9 @@ public:
                 auto* motion = LoadMotion(bytes.data(), bytes.size(), group, nullptr, nullptr, settings.get(), group, i, true);
                 if (!motion) throw std::runtime_error("Invalid motion definition");
                 auto* concrete = static_cast<CubismMotion*>(motion);
+                // Retain slower authored fades; soften clips with abrupt boundaries.
+                concrete->SetFadeInTime(std::max(0.35f, concrete->GetFadeInTime()));
+                concrete->SetFadeOutTime(std::max(0.35f, concrete->GetFadeOutTime()));
                 concrete->SetEffectIds(eyes, lips);
                 concrete->SetLoop(false);
                 entries.push_back(motion);
@@ -153,8 +156,18 @@ public:
             bytes = readFile(root / settings->GetExpressionFileName(i));
             auto* expression = LoadExpression(bytes.data(), bytes.size(), name);
             if (!expression) throw std::runtime_error("Invalid expression definition");
+            expression->SetFadeInTime(std::max(0.35f, expression->GetFadeInTime()));
+            expression->SetFadeOutTime(std::max(0.35f, expression->GetFadeOutTime()));
             expressions.emplace(name, expression);
         }
+        // An empty expression lets Cubism fade the previous expression out naturally.
+        const std::string neutral = "{\"Type\":\"Live2D Expression\",\"Parameters\":[]}";
+        auto* neutralMotion = LoadExpression(reinterpret_cast<const csmByte*>(neutral.data()),
+                                             neutral.size(), "neutral");
+        if (!neutralMotion) throw std::runtime_error("Cannot initialize neutral expression");
+        neutralMotion->SetFadeInTime(0.35f);
+        neutralMotion->SetFadeOutTime(0.35f);
+        expressions.emplace("", neutralMotion);
         csmMap<csmString, csmFloat32> layout;
         settings->GetLayoutMap(layout);
         _modelMatrix->SetupFromLayout(layout);
@@ -181,8 +194,6 @@ public:
     }
 
     void expression(const std::string& name) {
-        _expressionManager->StopAllMotions();
-        if (name.empty()) return;
         auto it = expressions.find(name);
         if (it == expressions.end()) throw std::runtime_error("Unknown expression name");
         _expressionManager->StartMotionPriority(it->second, false, 3);

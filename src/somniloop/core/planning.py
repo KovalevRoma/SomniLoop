@@ -26,6 +26,7 @@ class PlanningRepository:
         if due_time is not None and due_time != "" and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", due_time):
             raise ValueError("Time must use HH:mm format")
         now = datetime.now().isoformat(timespec="seconds")
+        created = task_id is None
         with self.connection:
             if task_id is None:
                 cursor = self.connection.execute(
@@ -56,6 +57,8 @@ class PlanningRepository:
                             "INSERT INTO planner_items(planner_id, title, done, state) VALUES (?, ?, ?, ?)",
                             (task_id, item_title, done, state),
                         )
+        if created:
+            self.activity.emit("created")
         return task_id
 
     def list_planner_tasks(
@@ -127,6 +130,11 @@ class PlanningRepository:
                 ),
             )
 
+        if state == TaskState.NOT_DONE:
+            self.activity.emit("not_done")
+        elif not remaining:
+            self.activity.emit("archived")
+
     def complete_planner_task(self, task_id: int) -> None:
         self.set_planner_task_state(task_id, TaskState.DONE)
 
@@ -147,6 +155,11 @@ class PlanningRepository:
                 ),
             )
 
+        if state == TaskState.NOT_DONE:
+            self.activity.emit("not_done")
+        elif state == TaskState.DONE:
+            self.activity.emit("archived")
+
     def archive_planner_task(self, task_id: int, archived: bool = True) -> None:
         with self.connection:
             if archived:
@@ -161,6 +174,9 @@ class PlanningRepository:
                 self.connection.execute(
                     "UPDATE planner_items SET done=0, state='unset' WHERE planner_id=?", (task_id,)
                 )
+
+        if archived:
+            self.activity.emit("archived")
 
     def sync_birthday_notifications(self, today: date | None = None) -> None:
         from somniloop.knowledge.people import has_birth_conflict

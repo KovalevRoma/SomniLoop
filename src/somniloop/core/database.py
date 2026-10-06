@@ -158,6 +158,9 @@ CREATE INDEX IF NOT EXISTS planner_by_archive_date ON planner_tasks(archived, du
 
 class Repository(PlanningRepository):
     def __init__(self, path: str | Path) -> None:
+        from .activity import ActivityEvents
+
+        self.activity = ActivityEvents()
         self.path = Path(path)
         database_existed = self.path.exists() and self.path.stat().st_size > 0
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -341,6 +344,7 @@ class Repository(PlanningRepository):
                 (tracker_id, task_name, position),
             )
         self.connection.commit()
+        self.activity.emit("created")
         return tracker_id
 
     def update_tracker(
@@ -381,6 +385,8 @@ class Repository(PlanningRepository):
             "UPDATE trackers SET archived=? WHERE id=?", (int(archived), tracker_id)
         )
         self.connection.commit()
+        if archived:
+            self.activity.emit("archived")
 
     def list_trackers(self, include_archived: bool = False) -> list[Tracker]:
         sql = "SELECT * FROM trackers"
@@ -436,6 +442,7 @@ class Repository(PlanningRepository):
             ),
         )
         self.connection.commit()
+        self.activity.emit("created")
         return int(cursor.lastrowid)
 
     def update_task(
@@ -621,6 +628,8 @@ class Repository(PlanningRepository):
         self._read_cache.pop(("entries", tracker_id, day.replace(day=1).isoformat()), None)
         self._read_cache.pop(("streak_status", tracker_id, day.year), None)
         self._cache_generation = self.connection.total_changes
+        if state == TaskState.NOT_DONE:
+            self.activity.emit("not_done")
 
     def _scheduled_dates(self, tracker: Tracker, start: date, end: date) -> list[date]:
         if tracker.mode == TrackerMode.MANUAL:

@@ -1,6 +1,7 @@
 """Deterministic touch rules and geometry-relative hit zones for Epsilon."""
 
 import math
+from collections import deque
 
 
 class TouchState:
@@ -11,21 +12,38 @@ class TouchState:
         self.last_action = None
         self.repetitions = 0
         self.emotion = "Normal"
+        self.motion = None
+        self.recent_taps = deque(maxlen=20)
 
-    def react(self, zone, stroke, now):
+    def react(self, zone, now):
+        self.motion = None
         if zone is None:
             return None
         quiet = self.last_touch is None or now - self.last_touch >= self.quiet_seconds
-        action = (zone, stroke)
+        action = "lower" if zone in ("hips", "legs") else zone
         self.repetitions = (
             self.repetitions + 1 if not quiet and action == self.last_action else 1
         )
         self.last_action, self.last_touch = action, now
-        if self.repetitions > 4:
-            emotion = "Angry"
+        if zone in ("head", "cheek"):
+            # Affection is not counted as intrusive touching.
+            self.repetitions = 0
+            self.emotion = "Smile"
+            return self.emotion
+        self.recent_taps.append(now)
+        while self.recent_taps and now - self.recent_taps[0] > 10:
+            self.recent_taps.popleft()
+        if action == "lower" and self.repetitions > 4:
+            emotion = "Disgust"
+            self.motion = ("Tap", 3)
+        elif self.repetitions > 4 or len(self.recent_taps) >= 5:
+            emotion = "Disgust" if zone in ("chest", "hips", "legs") else "Angry"
+            self.motion = ("Shake", 1)
         elif zone in ("chest", "hips", "legs"):
             emotion = "Blushing" if self.emotion == "Smile" and zone != "legs" else "Angry"
-        elif stroke and zone in ("head", "cheek"):
+            if action == "lower":
+                self.motion = ("Tap", 2)
+        elif zone in ("head", "cheek"):
             emotion = "Smile"
         elif quiet:
             emotion = "Surprised"
@@ -35,8 +53,8 @@ class TouchState:
         return emotion
 
 
-class StrokeGesture:
-    """One press/drag/release is one gesture, independent of mouse event frequency."""
+class TapGesture:
+    """Accept clicks; dragging is deliberately not an interaction gesture."""
 
     def __init__(self):
         self.cancel()
@@ -44,23 +62,19 @@ class StrokeGesture:
     def cancel(self):
         self.zone = None
         self.point = None
-        self.distance = 0.0
 
     def begin(self, zone, x, y):
-        self.zone, self.point, self.distance = zone, (x, y), 0.0
+        self.zone, self.point = zone, (x, y)
 
     def move(self, zone, x, y):
         if self.point is None:
             return
-        if zone != self.zone:
+        if zone != self.zone or math.hypot(x - self.point[0], y - self.point[1]) > 8:
             self.cancel()
-            return
-        self.distance += math.hypot(x - self.point[0], y - self.point[1])
-        self.point = (x, y)
 
-    def finish(self, zone, x, y, threshold):
+    def finish(self, zone, x, y):
         self.move(zone, x, y)
-        result = (self.zone, self.distance >= threshold)
+        result = self.zone
         self.cancel()
         return result
 

@@ -12,7 +12,9 @@ class EmotionBadge(QWidget):
         "Surprised": ("Удивлена", "Surprised", "#e4c17d"),
         "Angry": ("Сердится", "Annoyed", "#df929b"),
         "Blushing": ("Смущена", "Blushing", "#d6a0c2"),
+        "Disgust": ("Отвращение", "Disgusted", "#a5b99b"),
         "Sad": ("Грустит", "Sad", "#96b4d9"),
+        "Preview": ("Просмотр движения", "Motion preview", "#96b4d9"),
     }
 
     def __init__(self, host):

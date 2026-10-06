@@ -12,13 +12,13 @@ import traceback
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from somniloop.core.database import Repository
 from somniloop.core.models import ScheduleType, TaskState, TrackerMode
+from somniloop.live2d.interaction import TouchState
 from somniloop.ui.main_window import MainWindow
 from somniloop.ui.modal_overlay import ModalOverlay
 from somniloop.ui.planner import PlannerDialog
@@ -149,7 +149,8 @@ def main():
             character = window.character
             assert character.caption.isVisible()
             assert character.effect_duration == 6.0
-            assert character.image.height() >= character.height() * 2
+            assert character.renderer.fbo.height() >= character.height() * 2
+            assert character.image.height() >= character.height()
             assert window.rect().contains(character.caption.geometry())
             window.grab().save(str(args.output / "somniloop-reaction.png"))
             checks.extend(["supersampling", "task-reaction", "optional-caption"])
@@ -180,44 +181,47 @@ def main():
                     name, character._zone_at(QPointF(location)), location
                 )
 
-            def stroke(location, small=False):
-                QTest.mousePress(character, Qt.MouseButton.LeftButton, pos=location)
-                for offset in ((3, -3, 3, -3, 0) if small else (10, -10, 0)):
-                    local = location + QPoint(offset, 0)
-                    event = QMouseEvent(QEvent.Type.MouseMove, QPointF(local),
-                                        QPointF(character.mapToGlobal(local)), Qt.MouseButton.NoButton,
-                                        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-                    app.sendEvent(character, event)
-                QTest.mouseRelease(character, Qt.MouseButton.LeftButton, pos=location)
+            def tap(location):
+                QTest.mouseClick(character, Qt.MouseButton.LeftButton, pos=location)
 
             for _ in range(4):
-                stroke(head)
+                tap(head)
                 assert character.status.emotion == "Smile"
-            stroke(head)
-            assert character.status.emotion == "Angry"
+            tap(head)
+            assert character.status.emotion == "Smile"
+            character.touch = TouchState()
             for _ in range(4):
-                stroke(cheek, small=True)
+                tap(cheek)
                 assert character.status.emotion == "Smile"
-            stroke(cheek, small=True)
-            assert character.status.emotion == "Angry"
+            tap(cheek)
+            assert character.status.emotion == "Smile"
+            character.touch = TouchState()
             QTest.mouseClick(character, Qt.MouseButton.LeftButton, pos=chest)
             assert character.status.emotion == "Angry"
-            stroke(head)
+            character.touch = TouchState()
+            tap(head)
             QTest.mouseClick(character, Qt.MouseButton.LeftButton, pos=chest)
             assert character.status.emotion == "Blushing"
-            stroke(head)
+            character.touch = TouchState()
+            tap(head)
             QTest.mouseClick(character, Qt.MouseButton.LeftButton, pos=hips)
             assert character.status.emotion == "Blushing"
-            stroke(head)
+            character.touch = TouchState()
+            tap(head)
             QTest.mouseClick(character, Qt.MouseButton.LeftButton, pos=legs)
             assert character.status.emotion == "Angry"
             character.touch.last_touch = time.monotonic() - 61
+            character.touch.recent_taps.clear()
             waist = point("PARTS_01_CLOTHES", .5, .55)
             assert character._zone_at(QPointF(waist)) == "other"
             QTest.mouseClick(character, Qt.MouseButton.LeftButton, pos=waist)
             assert character.status.emotion == "Surprised"
-            checks.extend(["geometry-hit-areas", "head-stroking", "fifth-stroke-angry",
-                           "cheek-stroking", "quiet-surprise", "smile-to-blushing", "emotion-status"])
+            character.touch = TouchState()
+            for _ in range(5):
+                character._touch_reaction("legs")
+            assert character.status.emotion == "Disgust"
+            checks.extend(["geometry-hit-areas", "head-taps", "repeated-affection-smiles",
+                           "cheek-taps", "quiet-surprise", "smile-to-blushing", "emotion-status"])
             QTimer.singleShot(1300, lambda: step(touch_finished))
 
         def touch_finished():
@@ -227,8 +231,42 @@ def main():
             character._frame()
             assert character.status.emotion == "Normal"
             character.config.interaction = False
-            character._touch_reaction("chest", False)
+            character._touch_reaction("chest")
             assert character.status.emotion == "Normal"
+            panel = character.motion_panel
+            assert panel is None
+            assert character.x() == window.width() - character.width() - character.config.offset_x
+            clips = [(group, index) for group, motions in character.motions.items()
+                     for index in range(len(motions))
+                     if group != "Idle" and (group, index) != ("Tap", 0)]
+            assert len(clips) == 13
+            for group, index in clips:
+                character.previewMotion(group, index)
+                assert character.renderer.lib.sl_motion_group(character.renderer.handle).decode() == group
+                assert character.preview_remaining > 0
+                assert character.status.emotion == "Preview"
+                character._frame()
+            # Reach the end using the same bounded delta as the SDK, without wall-clock waiting.
+            while character.preview_remaining > 0:
+                character.last_frame = time.monotonic() - .1
+                character._frame()
+            checks.extend(["no-preview-panel", "all-13-motion-clips"])
+            for event, group in (("created", "FlickUp"), ("settings_saved", "FlickUp"),
+                                 ("archived", "FlickUp"), ("not_done", None)):
+                character.motion_remaining = 0
+                character.applicationEvent(event)
+                character._frame()
+                active = character.renderer.lib.sl_motion_group(character.renderer.handle).decode()
+                assert active == group if group else active in ("Tap", "FlickDown")
+                assert character.motion_remaining > 0
+            character.motion_remaining = 0
+            character.touch_priority_until = 0
+            character.next_motion = 0
+            character._frame()
+            assert character.renderer.lib.sl_motion_group(character.renderer.handle) == b"Flick3"
+            assert 5.8 <= character.next_motion - time.monotonic() <= 10
+            checks.extend(["activity-motion-routing", "ambient-flick3"])
+            window.grab().save(str(args.output / "somniloop-motion-preview.png"))
             character.hide()
             assert not character.status.isVisible()
             finish()

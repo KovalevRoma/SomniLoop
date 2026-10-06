@@ -1027,6 +1027,7 @@ class SettingsDialog(QDialog):
         self.repository.set_setting("model_path", self.model_edit.text().strip())
         self.character_settings.save()
         self.settings_saved.emit()
+        self.repository.activity.emit("settings_saved")
         self.accept()
 
     def reject(self) -> None:

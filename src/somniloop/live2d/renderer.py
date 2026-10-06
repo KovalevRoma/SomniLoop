@@ -3,7 +3,7 @@
 import ctypes as ct
 import sys
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QRect, QSize
 from PySide6.QtGui import QImage, QOffscreenSurface, QOpenGLContext, QSurfaceFormat
 from PySide6.QtOpenGL import QOpenGLFramebufferObject, QOpenGLFramebufferObjectFormat
 
@@ -19,6 +19,7 @@ def render_size(width: int, height: int, dpr: float) -> QSize:
 class NativeRenderer:
     def __init__(self, resources):
         self.context = self.surface = self.fbo = self.handle = None
+        self.readback_fbo = None
         suffix = "dylib" if sys.platform == "darwin" else "so"
         self.lib = ct.CDLL(str(installation_root() / f"build/libsomniloop_live2d.{suffix}"))
         signatures = {
@@ -90,7 +91,8 @@ class NativeRenderer:
             message = self.lib.sl_error()
             raise RuntimeError(message.decode(errors="replace") if message else "Live2D failed")
 
-    def frame(self, size: QSize, dt: float, opacity: float) -> QImage:
+    def frame(self, size: QSize, dt: float, opacity: float,
+              output_size: QSize | None = None) -> QImage:
         self.current()
         try:
             if self.fbo is None or self.fbo.size() != size:
@@ -103,8 +105,22 @@ class NativeRenderer:
             if not self.fbo.bind():
                 raise RuntimeError("Cannot bind the Live2D render buffer")
             self.check(self.lib.sl_draw(self.handle, dt, size.width(), size.height(), opacity))
-            # Live frames are read back from the SDK's framebuffer, not cached animations.
-            image = self.fbo.toImage()
+            source = self.fbo
+            if (output_size is not None and output_size != size
+                    and QOpenGLFramebufferObject.hasOpenGLFramebufferBlit()):
+                if (self.readback_fbo is None or self.readback_fbo.size() != output_size):
+                    self.readback_fbo = QOpenGLFramebufferObject(output_size)
+                    if not self.readback_fbo.isValid():
+                        raise RuntimeError("Cannot allocate the Live2D readback buffer")
+                # Resolve supersampling on the GPU before transferring pixels to Qt.
+                QOpenGLFramebufferObject.blitFramebuffer(
+                    self.readback_fbo, QRect(0, 0, output_size.width(), output_size.height()),
+                    self.fbo, QRect(0, 0, size.width(), size.height()),
+                    0x00004000, 0x2601,  # GL_COLOR_BUFFER_BIT, GL_LINEAR
+                )
+                source = self.readback_fbo
+            # Old OpenGL implementations retain the original full-resolution path.
+            image = source.toImage()
             self.fbo.release()
             return image
         finally:
@@ -127,6 +143,7 @@ class NativeRenderer:
                 self.lib.sl_destroy(self.handle)
                 self.handle = None
             self.fbo = None
+            self.readback_fbo = None
             self.context.doneCurrent()
         self.context = None
         if self.surface:

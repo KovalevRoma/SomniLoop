@@ -51,11 +51,11 @@ class CharacterSettings(QGroupBox):
         )
         self.interaction.setChecked(config.interaction)
         self.interaction.setToolTip(
-            "Поглаживание: зажми левую кнопку и проведи по голове или щеке."
-            if ru else "To stroke: hold the left mouse button and move over the head or cheek."
+            "Нажми на голову или щёку для улыбки. Наведение на тело запускает движения."
+            if ru else "Tap the head or cheek for a smile. Hover over body zones for motions."
         )
         form.addRow(self.interaction)
-        self.reactions = QCheckBox("Реакции на выполненные задачи" if ru else "Task completion reactions")
+        self.reactions = QCheckBox("Реакции на действия" if ru else "Activity reactions")
         self.reactions.setChecked(config.reactions)
         form.addRow(self.reactions)
         self.captions = QCheckBox("Короткие реплики" if ru else "Short captions")

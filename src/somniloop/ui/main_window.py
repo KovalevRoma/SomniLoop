@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -37,6 +37,8 @@ from .tracker_detail import TrackerDetailDialog
 
 
 class MainWindow(QMainWindow):
+    activity_received = Signal(str)
+
     def __init__(self, repository: Repository, icon_path: Path | None = None) -> None:
         super().__init__()
         self.repository = repository
@@ -46,6 +48,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 790)
         self.setMinimumSize(980, 650)
         self._rebuild_ui()
+        self.activity_received.connect(self._character_activity, Qt.ConnectionType.QueuedConnection)
+        self._unsubscribe_activity = repository.activity.subscribe(self.activity_received.emit)
         self._current_day = date.today()
         self.day_timer = QTimer(self)
         self.day_timer.setInterval(60000)
@@ -309,12 +313,16 @@ class MainWindow(QMainWindow):
     def _data_changed(self) -> None:
         self.dashboard.refresh()
 
+    def _character_activity(self, event):
+        self.character.applicationEvent(event)
+
     def closeEvent(self, event) -> None:
         if self.graph_page.worker and self.graph_page.worker.isRunning():
             QMessageBox.information(self, self.i18n.t("knowledge"), self.i18n.t("wait_for_graph"))
             event.ignore()
             return
         self.day_timer.stop()
+        self._unsubscribe_activity()
         self.character.dispose()
         self.graph_page.graph_view.save_state()
         self.graph_page.graph_view.state.repository = None
