@@ -38,7 +38,7 @@ class ModalOverlay(QWidget):
             for child in host.findChildren(
                 QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly
             )
-            if child is not self and not child.isWindow()
+            if child is not self and not child.isWindow() and not child.property("modalCompanion")
         ]
         for child, _enabled in self.disabled:
             child.setEnabled(False)
@@ -88,6 +88,9 @@ class ModalOverlay(QWidget):
         self.arrange()
         self.show()
         self.raise_()
+        character = getattr(host, "character", None)
+        if character is not None:
+            character._sync()
         dialog.show()
         dialog.setFocus(Qt.FocusReason.OtherFocusReason)
         dialog.focusNextChild()
@@ -141,6 +144,8 @@ class ModalOverlay(QWidget):
             owner = watched
             while owner is not None and not isinstance(owner, QWidget):
                 owner = owner.parent()
+            if owner is not None and owner.property("modalCompanion"):
+                return False
             if owner is not None and (owner is self.host or self.host.isAncestorOf(owner)):
                 return owner is not self and not self.isAncestorOf(owner)
         return False

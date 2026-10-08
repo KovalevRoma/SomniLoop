@@ -312,6 +312,8 @@ def test_links_are_escaped_and_only_open_web_urls(app, monkeypatch):
 
 
 def test_main_window_has_archive_drawer_and_planner(app, tmp_path):
+    from PySide6.QtWidgets import QFrame
+
     repository = Repository(tmp_path / "main.db")
     window = MainWindow(repository)
     window.show()
@@ -319,7 +321,9 @@ def test_main_window_has_archive_drawer_and_planner(app, tmp_path):
     assert window.mask().isEmpty()
     assert not window.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     assert window.grab().toImage().pixelColor(0, window.height() - 1).alpha() == 255
-    assert window.dashboard.date_label.font().pixelSize() >= 18
+    assert window.dashboard.date_label.font().pixelSize() >= 14
+    assert "\n" not in window.dashboard.date_label.text()
+    assert window.findChild(QFrame, "topBar").height() <= 48
     assert window.dashboard.planner is not None
     assert window.notification_drawer.isHidden()
     assert any(button.text() == "Архив" for button in window.findChildren(QPushButton))

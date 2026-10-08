@@ -11,7 +11,6 @@ from PySide6.QtGui import QBitmap, QCursor, QImage, QPainter, QRegion
 from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 from .interaction import PART_IDS, TapGesture, TouchState, hit_zone
-from .motion_preview import MotionPreviewPanel
 from .reactions import LocalSpeech, ReactionController
 from .renderer import NativeRenderer, render_size
 from .resources import CharacterConfig, ModelResources, epsilon_manifest
@@ -19,9 +18,6 @@ from .smoothing import SmoothGaze
 from .status import EmotionBadge
 
 logger = logging.getLogger(__name__)
-
-# Temporary review UI: disable this flag to remove the panel and restore placement.
-SHOW_MOTION_PREVIEW = False
 
 
 class Live2DOverlay(QWidget):
@@ -31,6 +27,7 @@ class Live2DOverlay(QWidget):
     def __init__(self, host, config: CharacterConfig):
         super().__init__(host)
         self.host, self.config = host, config
+        self.setProperty("modalCompanion", True)
         self.renderer = self.resources = None
         self.error = ""
         self.disposed = False
@@ -55,13 +52,18 @@ class Live2DOverlay(QWidget):
         self.gaze = SmoothGaze()
         self.touch_priority_until = 0.0
         self.status = EmotionBadge(host)
-        self.motion_panel = None
+        self.status.setProperty("modalCompanion", True)
+        self.status.dragged.connect(self._drag_character)
+        self.status.drag_finished.connect(self._save_position)
+        self.content_bottom = None
+        self.content_bounds = None
         self.preview_remaining = 0.0
         self.reactions = ReactionController(self)
         self.reactions.requested.connect(self._react)
         self.speech = LocalSpeech(self)
         self.speech.failed.connect(self._voice_failed)
         self.caption = QLabel(host)
+        self.caption.setProperty("modalCompanion", True)
         self.caption.setWordWrap(True)
         self.caption.setTextFormat(Qt.TextFormat.PlainText)
         self.caption.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
@@ -106,10 +108,6 @@ class Live2DOverlay(QWidget):
             raise RuntimeError("Live2D needs an OpenGL-capable Qt platform (Wayland or X11)")
         self.resources = ModelResources(epsilon_manifest())
         self.renderer = NativeRenderer(self.resources)
-        if SHOW_MOTION_PREVIEW:
-            language = getattr(getattr(self.host, "i18n", None), "language", "en")
-            self.motion_panel = MotionPreviewPanel(self.host, self.motions, language)
-            self.motion_panel.requested.connect(self.previewMotion)
         self.destroyed.connect(lambda _obj=None, renderer=self.renderer: renderer.close())
         self.renderer.lib.sl_idle(self.renderer.handle, int(self.config.idle))
         self.loaded.emit()
@@ -128,7 +126,6 @@ class Live2DOverlay(QWidget):
             and not self.error
             and self.host.isVisible()
             and not self.host.isMinimized()
-            and not getattr(self.host, "_modal_overlays", [])
         )
         if visible and self.renderer is None:
             try:
@@ -142,9 +139,6 @@ class Live2DOverlay(QWidget):
             self.raise_()
             self.status.show()
             self.status.raise_()
-            if self.motion_panel:
-                self.motion_panel.show()
-                self.motion_panel.raise_()
             if not self.timer.isActive():
                 self.last_frame = time.monotonic()
                 self.timer.start()
@@ -153,8 +147,6 @@ class Live2DOverlay(QWidget):
             self.reactions.cancel()
             self.caption.hide()
             self.status.hide()
-            if self.motion_panel:
-                self.motion_panel.hide()
             self.gesture.cancel()
             self.speech.stop()
             QWidget.setVisible(self, False)
@@ -164,27 +156,15 @@ class Live2DOverlay(QWidget):
         height = max(1, min(round(340 * self.config.scale), int(self.host.height() * 0.62),
                             self.host.height() - footer))
         width = max(1, min(round(height * 0.72), int(self.host.width() * 0.4)))
-        panel_width = min(144, max(1, self.host.width() // 3)) if self.motion_panel else 0
-        panel_space = panel_width + 12 if self.motion_panel else 0
-        x = max(0, min(self.host.width() - width - panel_space,
-                       self.host.width() - width - panel_space - self.config.offset_x))
-        y = max(
-            0, min(self.host.height() - height - footer,
-                   self.host.height() - height - footer - self.config.offset_y)
-        )
+        left, top, right, bottom = self._position_limits(width, height)
+        x = max(left, min(right, self.host.width() - width - self.config.offset_x))
+        y = max(top, min(bottom, self.host.height() - height - footer - self.config.offset_y))
         self.setGeometry(x, y, width, height)
-        if self.motion_panel:
-            panel_height = min(self.motion_panel.preferred_height, max(1, self.host.height() - 24))
-            self.motion_panel.setGeometry(
-                min(x + width + 12, self.host.width() - panel_width),
-                max(12, min(y + height + footer - panel_height,
-                            self.host.height() - panel_height - 12)),
-                panel_width, panel_height,
-            )
-        badge_width = min(max(160, width), max(1, self.host.width() - 16))
+        badge_width = min(self.status.preferred_width(), max(1, self.host.width() - 16))
         self.status.setGeometry(
             max(0, min(round(x + (width - badge_width) / 2), self.host.width() - badge_width)),
-            min(y + height + 6, max(0, self.host.height() - self.status.height())),
+            min(y + round(height * (self.content_bottom or .9)) + 4,
+                max(0, self.host.height() - self.status.height())),
             badge_width, self.status.height(),
         )
         self.caption.setFixedWidth(min(260, max(1, self.host.width() - 24)))
@@ -196,12 +176,33 @@ class Live2DOverlay(QWidget):
         if self.caption.isVisible():
             self.caption.raise_()
 
+    def _drag_character(self, delta):
+        # Store offsets from the actual clamped position, avoiding edge overshoot.
+        footer = self.status.height() + 6
+        left, top, right, bottom = self._position_limits(self.width(), self.height())
+        x = max(left, min(right, self.x() + delta.x()))
+        y = max(top, min(bottom, self.y() + delta.y()))
+        self.config.offset_x = self.host.width() - self.width() - x
+        self.config.offset_y = self.host.height() - self.height() - footer - y
+        self._arrange()
+
+    def _position_limits(self, width, height):
+        # Transparent canvas margins may extend outside the host; visible content may not.
+        x0, y0, x1, y1 = self.content_bounds or (0, 0, 1, self.content_bottom or .9)
+        left, top = -round(x0 * width), -round(y0 * height)
+        right = max(left, self.host.width() - round(x1 * width))
+        bottom = max(top, self.host.height() - round(y1 * height) - 4 - self.status.height())
+        return left, top, right, bottom
+
+    def _save_position(self):
+        if hasattr(self.host, "repository"):
+            self.config.save(self.host.repository)
+
     def _frame(self):
         if self.disposed or not self.renderer:
             return
         if (
-            getattr(self.host, "_modal_overlays", [])
-            or not self.host.isVisible()
+            not self.host.isVisible()
             or self.host.isMinimized()
         ):
             self._sync()
@@ -213,8 +214,6 @@ class Live2DOverlay(QWidget):
                 self.preview_remaining = max(0, self.preview_remaining - min(.1, now - self.last_frame))
                 if self.preview_remaining == 0:
                     self.resetExpression()
-                    if self.motion_panel:
-                        self.motion_panel.set_active()
                     self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,
                                       not self.config.interaction)
             elapsed = now - self.reaction_started
@@ -233,7 +232,8 @@ class Live2DOverlay(QWidget):
                 self.reaction_started = 0.0
             self._process_activity(now)
             self._hover(now)
-            if (self.config.idle and now >= self.next_motion and not self.preview_remaining
+            if (self.config.idle
+                    and now >= self.next_motion and not self.preview_remaining
                     and not self.motion_remaining and now >= self.touch_priority_until):
                 self._event_motion("Flick3", random.randrange(2), 1)
                 self.next_motion = now + random.uniform(6, 10)
@@ -249,6 +249,24 @@ class Live2DOverlay(QWidget):
                                 min(size.height(), max(1, round(self.height() * dpr))))
             self.image = self.renderer.frame(size, now - self.last_frame, self.config.opacity,
                                              output_size=output_size)
+            if (self.content_bottom is None or self.frames % 6 == 0) and not self.image.isNull():
+                # Grow a stable motion envelope so hair and hands are not clipped at edges.
+                thumbnail = self.image.scaledToHeight(128)
+                bounds = QRegion(QBitmap.fromImage(thumbnail.createAlphaMask())).boundingRect()
+                if not bounds.isEmpty():
+                    measured = (
+                        bounds.left() / thumbnail.width(), bounds.top() / thumbnail.height(),
+                        (bounds.right() + 1) / thumbnail.width(), (bounds.bottom() + 1) / thumbnail.height(),
+                    )
+                    if self.content_bounds:
+                        measured = (min(measured[0], self.content_bounds[0]),
+                                    min(measured[1], self.content_bounds[1]),
+                                    max(measured[2], self.content_bounds[2]),
+                                    max(measured[3], self.content_bounds[3]))
+                    if measured != self.content_bounds:
+                        self.content_bounds = measured
+                        self.content_bottom = measured[3]
+                        self._arrange()
             self.last_frame = now
             self.frames += 1
             if self.config.interaction and not self.preview_remaining and self.frames % 6 == 1:
@@ -411,6 +429,7 @@ class Live2DOverlay(QWidget):
 
     def _hover(self, now):
         if (not self.config.interaction or self.preview_remaining
+                or getattr(self.host, "_modal_overlays", [])
                 or QApplication.mouseButtons() != Qt.MouseButton.NoButton):
             return
         position = QCursor.pos()
@@ -488,13 +507,8 @@ class Live2DOverlay(QWidget):
             # A stale silhouette must not clip a clip's larger arm/hair movements.
             self.clearMask()
             self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-            if self.motion_panel:
-                self.motion_panel.set_active((group, index))
         except Exception as error:
             logger.warning("Motion preview failed: %s", error)
-            if self.motion_panel:
-                self.motion_panel.set_active()
-                self.motion_panel.setToolTip(str(error))
 
     def playMotion(self, group, index):
         if not self.renderer:
@@ -566,8 +580,6 @@ class Live2DOverlay(QWidget):
         self.reactions.cancel()
         self.caption.hide()
         self.status.hide()
-        if self.motion_panel:
-            self.motion_panel.hide()
         self.speech.stop()
         QWidget.setVisible(self, False)
         if self.renderer:
@@ -587,10 +599,6 @@ class Live2DOverlay(QWidget):
         self.caption.deleteLater()
         self.status.hide()
         self.status.deleteLater()
-        if self.motion_panel:
-            self.motion_panel.hide()
-            self.motion_panel.deleteLater()
-            self.motion_panel = None
         self.gesture.cancel()
         self.speech.stop()
         self.host.removeEventFilter(self)

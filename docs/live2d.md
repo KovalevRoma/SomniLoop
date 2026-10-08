@@ -54,8 +54,9 @@ is intentional: it avoids native child-window stacking problems with the app's
 embedded dialogs. This is a live render target, not a stored animation.
 
 The character is bounded to the lower-right of the main window. The render
-projection preserves model proportions. Rendering pauses when hidden, minimized
-or a modal overlay is open. A lightweight 200 ms visibility check remains active.
+projection preserves model proportions. Rendering pauses when hidden or minimized,
+but continues above embedded modal forms, including settings and task editors.
+A lightweight 200 ms visibility check remains active.
 Textures, motions, framebuffer, context, SDK state, timers and event filters are
 released on teardown. Only one character renderer is supported per process.
 
@@ -86,9 +87,9 @@ No new tables or changes to task/graph storage are required.
 ## Emotion badge and touch zones
 
 A translucent, elongated hexagon below Epsilon shows the current expression in
-Russian or English. It does not take mouse input. Space is reserved below the
-character, including after resize; the badge hides with the character and modal
-dialogs. Expressions return to `Normal` after five seconds (task milestones may
+Russian or English. Dragging the badge moves the character, including while an
+embedded form is open. The badge hides only with the character.
+Expressions return to `Normal` after five seconds (task milestones may
 last longer). This is an animation status, not a claim of actual feelings.
 
 Enable **React to cursor and clicks** in character settings to use touch zones.
@@ -132,25 +133,17 @@ explicit failure displays Sad. Blushing follows a happy state and a chest/hips t
 Temporary test clips display Motion preview (Просмотр движения) until they finish.
 Event statuses expire back to Relaxed; expressions are cleared on expiry as well.
 
-### Temporary motion preview buttons
+### Diagnostic motion preview
 
-The temporary blue review column is disabled by default. Epsilon uses the freed
-space and returns to the normal lower-right placement. If enabled for development,
-the column lists all 13 non-greeting/non-idle motions: `Tap/1..3` and
-both clips of `Flick3`, `FlickUp`, `FlickDown`, `Flick` and `Shake`. Indices are
-zero-based; the tooltip shows the actual filename. Clicking starts that clip;
-clicking another button switches clips. The active button is highlighted.
+The temporary blue review column and its layout code have been removed.
+The smoke test still uses `previewMotion(group, index)` to check all 13
+non-greeting/non-idle clips without adding controls to the application.
 
 During preview, automatic task/touch reactions and cursor tracking are suspended,
 and any expression overlay is cleared. Physics and breathing continue. Preview
 time advances with rendered simulation time, so minimizing the window does not
 prematurely release the preview. Normal behavior resumes after the clip finishes.
-The column stays inside the window, scrolls if height is limited and hides with
-the character/modals. It works even with character touch interaction disabled.
-
-This is deliberately isolated in `motion_preview.py`. Set `SHOW_MOTION_PREVIEW`
-to `True` in `overlay.py` to restore the developer-only review column.
-It does not change stored preferences or model assets.
+Diagnostic playback does not change stored preferences or model assets.
 
 ```python
 character = window.character
@@ -212,7 +205,7 @@ constant), followed by Cubism's existing acceleration-limited head tracking.
 Motion and expression fades have a 350 ms minimum, preserving longer authored
 fades. Expression changes and resets crossfade through Cubism instead of abruptly
 stopping the expression manager. Authored motion timing and physics stay unchanged.
-Rendering still pauses while the character is hidden or a modal dialog is open.
+Rendering pauses while the character is hidden or minimized, not for modal forms.
 
 The character renders at twice the physical pixel resolution and is smoothly
 downsampled on the GPU before readback at the display's physical resolution.
@@ -238,8 +231,9 @@ undo and date rollover do not produce praise. A completion is celebrated at most
 once per item/day within the current dashboard session. A 900 ms aggregation
 window combines quick clicks, followed by
 a 15-second cooldown; the all-done milestone can upgrade an ordinary reaction
-during cooldown. Old reactions are never queued. Hidden/modal states cancel
-pending feedback. No task or scheduling data is changed by this feature.
+during cooldown. Old reactions are never queued. Hidden states cancel pending
+feedback; modal forms suppress hover and celebration triggers while rendering
+continues. No task or scheduling data is changed by this feature.
 
 Settings provide independent **task reactions**, **short captions** and **local
 voice** switches. Reactions default on; captions and voice default off and are
@@ -252,7 +246,7 @@ Voice loads optional `PySide6.QtTextToSpeech` lazily and uses a local engine
 are missing, visual feedback still works and the error appears in character
 settings. Voice quality/languages depend on installed system voices; this is not
 an Epsilon-specific anime voice. No phoneme/lip synchronization is implemented.
-Speech stops on hiding, modal dialogs and disposal.
+Speech stops on hiding and disposal.
 
 ## Verification
 

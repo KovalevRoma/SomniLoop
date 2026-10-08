@@ -9,7 +9,6 @@ QWidget {
 }
 QWidget#flat { background: transparent; }
 QLabel#homePriority { background: #36394b; color: #e2e2ef; padding: 3px 7px; border-radius: 8px; }
-QPushButton#partialButton:checked { background: #67522b; border-color: #bd9b58; }
 QMainWindow, QDialog { background: #11121a; }
 QLabel { background: transparent; }
 QCheckBox { background: transparent; spacing: 8px; }
@@ -72,7 +71,6 @@ LIGHT_STYLE = r"""
 QCheckBox { background: transparent; spacing: 8px; }
 QWidget#flat { background: transparent; }
 QLabel#homePriority { background: #e5e7ef; color: #363d53; padding: 3px 7px; border-radius: 8px; }
-QPushButton#partialButton:checked { background: #f2ddb6; color: #63491c; border-color: #ac8744; }
 QWidget {
     background: #f5f4fa;
     color: #222332;
@@ -235,4 +233,6 @@ def stylesheet(theme: str) -> str:
         QWidget#dashboard QPushButton#completionToggle:hover { background: #cceade; }
         QWidget#dashboard QPushButton:focus { border: 2px solid #7962b7; }
         """
-    return base + extra + home
+    from .workspace_style import workspace_stylesheet
+
+    return base + extra + home + workspace_stylesheet(theme)

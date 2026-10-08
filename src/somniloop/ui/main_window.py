@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QDateTime, QLocale, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -55,6 +56,10 @@ class MainWindow(QMainWindow):
         self.day_timer.setInterval(60000)
         self.day_timer.timeout.connect(self._check_day)
         self.day_timer.start()
+        self.clock_timer = QTimer(self)
+        self.clock_timer.setSingleShot(True)
+        self.clock_timer.timeout.connect(self._update_header_clock)
+        self._update_header_clock()
         QApplication.instance().applicationStateChanged.connect(self._application_state_changed)
 
     def _rebuild_ui(self) -> None:
@@ -81,17 +86,27 @@ class MainWindow(QMainWindow):
         root_widget = QWidget()
         root_widget.setObjectName("windowContent")
         root = QVBoxLayout(root_widget)
-        root.setContentsMargins(16, 12, 16, 16)
+        root.setContentsMargins(12, 6, 12, 12)
         root.setSpacing(12)
         top_bar = QFrame()
         top_bar.setObjectName("topBar")
-        top = QHBoxLayout(top_bar)
+        top_bar.setStyleSheet("QFrame#topBar { padding:0px; }")
+        top_grid = QGridLayout(top_bar)
+        top_grid.setContentsMargins(8, 4, 8, 4)
+        top = QHBoxLayout()
+        top_grid.addLayout(top, 0, 0)
+        top_grid.setColumnStretch(0, 1)
+        top_grid.setColumnStretch(2, 1)
+        top_date = QHBoxLayout()
+        top_grid.addLayout(top_date, 0, 1)
+        top_actions = QHBoxLayout()
+        top_grid.addLayout(top_actions, 0, 2)
         logo = QLabel()
-        logo.setFixedSize(38, 38)
+        logo.setFixedSize(26, 26)
         if self.icon_path and self.icon_path.exists():
             logo.setPixmap(
                 QPixmap(str(self.icon_path)).scaled(
-                    QSize(36, 36),
+                    QSize(26, 26),
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
@@ -100,6 +115,7 @@ class MainWindow(QMainWindow):
             logo.setText("∞")
         title = QLabel(self.i18n.t("app_name"))
         title.setObjectName("appTitle")
+        title.setStyleSheet("font-size:20px; font-weight:700;")
         self.dashboard_button = QPushButton(self.i18n.t("dashboard"))
         self.dashboard_button.setCheckable(True)
         self.dashboard_button.setChecked(True)
@@ -107,24 +123,27 @@ class MainWindow(QMainWindow):
         self.graph_button = QPushButton(self.i18n.t("knowledge"))
         self.graph_button.setCheckable(True)
         self.graph_button.clicked.connect(lambda: self._show_page(1))
+        for navigation in (self.dashboard_button, self.graph_button):
+            navigation.setStyleSheet("font-size:13px; padding:3px 8px; min-height:0px;")
+            navigation.setFixedHeight(30)
         settings = QPushButton()
         settings.setIcon(interface_icon("settings"))
-        settings.setIconSize(QSize(28, 28))
-        settings.setFixedSize(48, 44)
-        settings.setStyleSheet("padding:0;")
+        settings.setIconSize(QSize(22, 22))
+        settings.setFixedSize(32, 30)
+        settings.setStyleSheet("padding:0; min-height:0px;")
         settings.setToolTip(self.i18n.t("settings"))
         settings.setAccessibleName(self.i18n.t("settings"))
         settings.clicked.connect(self._settings)
         archive = QPushButton(self.i18n.t("archive"))
-        archive.setMinimumHeight(44)
-        archive.setStyleSheet("font-size:16px;")
+        archive.setFixedHeight(30)
+        archive.setStyleSheet("font-size:13px; padding:3px 8px; min-height:0px;")
         archive.setToolTip(self.i18n.t("archive"))
         archive.clicked.connect(self._archive)
         self.notifications_button = QPushButton("0")
         self.notifications_button.setIcon(interface_icon("birthday"))
-        self.notifications_button.setIconSize(QSize(28, 28))
-        self.notifications_button.setMinimumSize(80, 44)
-        self.notifications_button.setStyleSheet("font-size:17px; padding:6px 12px;")
+        self.notifications_button.setIconSize(QSize(22, 22))
+        self.notifications_button.setFixedSize(60, 30)
+        self.notifications_button.setStyleSheet("font-size:13px; padding:3px 6px; min-height:0px;")
         self.notifications_button.setAccessibleName(self.i18n.t("birthday_reminders"))
         self.notifications_button.setToolTip(self.i18n.t("birthday_reminders"))
         self.notifications_button.clicked.connect(
@@ -132,13 +151,14 @@ class MainWindow(QMainWindow):
         )
         top.addWidget(logo)
         top.addWidget(title)
-        top.addSpacing(20)
+        top.addSpacing(8)
         top.addWidget(self.dashboard_button)
         top.addWidget(self.graph_button)
         top.addStretch()
-        top.addWidget(self.notifications_button)
-        top.addWidget(archive)
-        top.addWidget(settings)
+        top_actions.addStretch()
+        top_actions.addWidget(self.notifications_button)
+        top_actions.addWidget(archive)
+        top_actions.addWidget(settings)
         root.addWidget(top_bar)
         self.notification_drawer = NotificationDrawer(self.repository, self.i18n)
         self.notification_drawer.count_changed.connect(
@@ -150,7 +170,14 @@ class MainWindow(QMainWindow):
         root.addWidget(self.notification_drawer)
 
         self.pages = QStackedWidget()
-        self.dashboard = Dashboard(self.repository, self.i18n)
+        self.dashboard = Dashboard(self.repository, self.i18n, productivity=True)
+        top_date.addWidget(self.dashboard.date_label)
+        self.dashboard.date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.dashboard.date_label.setFixedWidth(224)
+        self.dashboard.date_label.setWordWrap(False)
+        self.dashboard.date_label.setStyleSheet("font-size:14px; font-weight:500; padding:0px;")
+        self._update_header_clock()
+        self.dashboard.data_changed.connect(self._update_header_clock)
         self.dashboard.new_requested.connect(self._new_tracker)
         self.dashboard.create_requested.connect(self._new_tracker)
         self.dashboard.open_requested.connect(self._open_tracker)
@@ -180,6 +207,8 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
+        if index == 0 and self.dashboard.workspace.tabs.currentIndex() == 0:
+            self.dashboard.workspace.change_view(0)
         self._sync_navigation(index)
 
     def _sync_navigation(self, index: int) -> None:
@@ -299,6 +328,20 @@ class MainWindow(QMainWindow):
         else:
             # Advance the rolling 24-hour queue without reloading tracker history.
             self.dashboard.today.set_data(self.dashboard.data)
+            if getattr(self.dashboard, "workspace", None):
+                self.dashboard.workspace.render()
+        self._update_header_clock()
+
+    def _update_header_clock(self):
+        locale = QLocale("ru_RU" if self.i18n.language == "ru" else "en_GB")
+        now = QDateTime.currentDateTime()
+        value = " · ".join((locale.toString(now.date(), "d MMM yyyy"),
+                            locale.toString(now.date(), "ddd"), now.toString("HH:mm")))
+        self.dashboard.date_label.setToolTip(locale.toString(now.date(), "dddd, d MMMM yyyy"))
+        if self.dashboard.date_label.text() != value:
+            self.dashboard.date_label.setText(value)
+        if hasattr(self, "clock_timer"):
+            self.clock_timer.start(60000 - now.time().second() * 1000 - now.time().msec())
 
     def _settings(self) -> None:
         if self.graph_page.worker and self.graph_page.worker.isRunning():
@@ -322,6 +365,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.day_timer.stop()
+        self.clock_timer.stop()
         self._unsubscribe_activity()
         self.character.dispose()
         self.graph_page.graph_view.save_state()

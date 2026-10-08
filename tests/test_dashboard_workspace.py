@@ -5,7 +5,7 @@ from types import SimpleNamespace
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QObject, Qt, QTime, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QScrollArea, QWidget
 
@@ -151,7 +151,8 @@ def test_upcoming_task_enters_on_minute_tick_without_history_reload(app, repo, m
     clock.now = lambda: now + timedelta(seconds=1)
     statements = []
     repo.connection.set_trace_callback(statements.append)
-    MainWindow._check_day(SimpleNamespace(_current_day=date.today(), dashboard=page))
+    MainWindow._check_day(SimpleNamespace(_current_day=date.today(), dashboard=page,
+                                          _update_header_clock=lambda: None))
     assert ("planner", identifier) in page.today.visible_keys
     assert not statements
     repo.connection.set_trace_callback(None)
@@ -497,12 +498,12 @@ def test_partial_states_roundtrip_and_legacy_restore(repo):
 def test_dashboard_language_and_creation_menu(app, repo, language):
     page = Dashboard(repo, I18n(language))
     actions = page.add.menu().actions()
-    assert len(actions) == 3
+    assert len(actions) == 2
     values = []
     page.create_requested.connect(values.append)
     actions[0].trigger()
-    actions[1].trigger()
-    assert values == ["habit", "plan"]
+    assert values == ["habit"]
+    assert actions[1].text() == I18n(language).t("planner_task")
     assert page.filters.search.placeholderText() == I18n(language).t("home_search")
     assert "20" in page.date_label.text()
     if language == "en":
@@ -552,8 +553,7 @@ def test_planner_save_and_cancel_edit_using_keyboard(app, repo):
     parent.show()
     dialog = PlannerDialog(repo, I18n("ru"), parent=parent)
     dialog.title_edit.setText("Сохранить задачу")
-    dialog.has_time.setChecked(True)
-    dialog.time_edit.setTime(QTime(19, 45))
+    dialog.date_field.set_value(date.today().isoformat(), "19:45")
     dialog.show()
     app.processEvents()
     save = dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Save)
@@ -565,8 +565,8 @@ def test_planner_save_and_cancel_edit_using_keyboard(app, repo):
     assert task.due_time == "19:45"
     edit = PlannerDialog(repo, I18n("ru"), task, parent)
     edit.title_edit.setText("Не сохранять правку")
-    assert edit.time_edit.time() == QTime(19, 45)
-    edit.has_time.setChecked(False)
+    assert edit.date_field.clock == "19:45"
+    edit.date_field.set_value(task.due_date, "")
     edit.show()
     app.processEvents()
     cancel = edit.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel)

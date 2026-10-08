@@ -6,7 +6,7 @@ from datetime import date
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -92,7 +92,8 @@ def test_overlay_blocks_background_centers_resizes_and_restores_focus(app, repo)
         QTest.mouseClick(
             host.windowHandle(),
             Qt.MouseButton.LeftButton,
-            pos=button.mapTo(host, button.rect().center()),
+            # The center can overlap a form control, including the date popup.
+            pos=button.mapTo(host, QPoint(2, button.height() // 2)),
         )
         QTest.keyClicks(edit, "bad")
         QTest.keyClick(host, Qt.Key.Key_K, Qt.KeyboardModifier.ControlModifier)

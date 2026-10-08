@@ -33,7 +33,7 @@ def routed_click(window, widget):
 
 
 @pytest.mark.parametrize("action", ["save", "cancel"])
-@pytest.mark.parametrize("kind", ["habit", "plan", "task"])
+@pytest.mark.parametrize("kind", ["habit", "task"])
 def test_add_menu_modal_workflow_with_window_routed_clicks(app, tmp_path, kind, action):
     repo = Repository(tmp_path / "workflow.db")
     window = MainWindow(repo)
@@ -75,7 +75,7 @@ def test_add_menu_modal_workflow_with_window_routed_clicks(app, tmp_path, kind, 
     )
     watchdog.start(2000)
     QTimer.singleShot(50, act)
-    item = menu.actions()[["habit", "plan", "task"].index(kind)]
+    item = menu.actions()[["habit", "task"].index(kind)]
     QTest.mouseClick(
         menu.windowHandle(), Qt.MouseButton.LeftButton, pos=menu.actionGeometry(item).center()
     )

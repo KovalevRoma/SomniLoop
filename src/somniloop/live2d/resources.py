@@ -39,8 +39,8 @@ class CharacterConfig:
                     raise ValueError("Invalid boolean configuration")
             value.scale = max(0.5, min(2.0, float(value.scale)))
             value.opacity = max(0.1, min(1.0, float(value.opacity)))
-            value.offset_x = max(-1000, min(1000, int(value.offset_x)))
-            value.offset_y = max(-1000, min(1000, int(value.offset_y)))
+            value.offset_x = max(-100000, min(100000, int(value.offset_x)))
+            value.offset_y = max(-100000, min(100000, int(value.offset_y)))
             return value
         except (ValueError, TypeError, AttributeError, OverflowError):
             return cls()

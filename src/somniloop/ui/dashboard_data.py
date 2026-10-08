@@ -33,6 +33,8 @@ def planner_in_next_24_hours(task, now: datetime) -> bool:
     A date without a time means the start of that day. Timestamps keep the
     window at 24 hours even across local daylight-saving transitions.
     """
+    if not task.due_date:
+        return False
     due = datetime.fromisoformat(f"{task.due_date}T{task.due_time or '00:00'}")
     return due.timestamp() <= now.timestamp() + 24 * 60 * 60
 

@@ -25,8 +25,9 @@ from somniloop.core.models import DayTask, ScheduleType, TaskState, TrackerMode
 from .calendar_dialog import CalendarDialog
 from .controls import RoundedDialog as QDialog
 from .controls import ScrollDateEdit as QDateEdit
-from .controls import link_label, linked_text, polish_dialog_buttons, show_saved
+from .controls import link_label, polish_dialog_buttons, show_saved
 from .dialogs import EditTrackerDialog, TaskEditDialog
+from .rich_text import RichTextView
 from .widgets import SmartPlainTextEdit, StateSelector
 
 
@@ -62,7 +63,7 @@ class TrackerDetailDialog(QDialog):
         header.addWidget(archive)
         header.addWidget(delete)
         root.addLayout(header)
-        self.description_label = link_label(self.tracker.description)
+        self.description_label = RichTextView(self.tracker.description)
         self.description_label.setWordWrap(True)
         self.description_label.setObjectName("muted")
         root.addWidget(self.description_label)
@@ -201,7 +202,7 @@ class TrackerDetailDialog(QDialog):
             top.addWidget(remove)
             layout.addLayout(top)
             if day_task.task.details and self.tracker.mode != TrackerMode.MANUAL:
-                details = link_label(day_task.task.details)
+                details = RichTextView(day_task.task.details)
                 details.setObjectName("muted")
                 details.setWordWrap(True)
                 layout.addWidget(details)
@@ -347,7 +348,7 @@ class TrackerDetailDialog(QDialog):
         )
         self.tracker = self.repository.get_tracker(self.tracker_id)
         self.title_label.setText(self.tracker.name)
-        self.description_label.setText(linked_text(self.tracker.description))
+        self.description_label.setText(self.tracker.description)
         self.setWindowTitle(self.tracker.name)
         self._render_day()
         self.data_changed.emit()

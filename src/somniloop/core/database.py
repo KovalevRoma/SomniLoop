@@ -24,6 +24,8 @@ from .models import (
     TrackerMode,
 )
 from .planning import PlanningRepository
+from .productivity import SCHEMA as WORKSPACE_SCHEMA
+from .productivity import WORKSPACE_TABLES, ProductivityRepository
 from .scheduling import due_dates_between, is_due, merge_dates, week_bounds
 
 SCHEMA = """
@@ -156,7 +158,7 @@ CREATE INDEX IF NOT EXISTS planner_by_archive_date ON planner_tasks(archived, du
 """
 
 
-class Repository(PlanningRepository):
+class Repository(PlanningRepository, ProductivityRepository):
     def __init__(self, path: str | Path) -> None:
         from .activity import ActivityEvents
 
@@ -177,6 +179,8 @@ class Repository(PlanningRepository):
         self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.executescript(SCHEMA)
         self._migrate_schema()
+        self.connection.executescript(WORKSPACE_SCHEMA)
+        self.migrate_work_projects()
         self.connection.execute("PRAGMA user_version=3")
         self.connection.commit()
         self._cache_generation = -1
@@ -1807,6 +1811,7 @@ class Repository(PlanningRepository):
             "planner_items",
             "birthday_notifications",
         )
+        tables += WORKSPACE_TABLES
         return {
             "format": "SomniLoop export",
             "version": 3,
@@ -1843,6 +1848,14 @@ class Repository(PlanningRepository):
         if any(table not in data or not isinstance(data[table], list) for table in tables):
             raise ValueError("Экспорт неполный или повреждён.")
 
+        # Older v3 exports have no workspace extension; restore those as empty.
+        data = dict(data)
+        for table in WORKSPACE_TABLES:
+            data.setdefault(table, [])
+            if not isinstance(data[table], list):
+                raise ValueError("Invalid workspace export")
+        tables += WORKSPACE_TABLES
+
         known_columns = {
             table: {row["name"] for row in self.connection.execute(f"PRAGMA table_info({table})")}
             for table in tables
@@ -1854,6 +1867,9 @@ class Repository(PlanningRepository):
 
         backup = self.backup(label="before-import")
         delete_order = (
+            "work_items",
+            "work_inbox",
+            "work_projects",
             "birthday_notifications",
             "planner_items",
             "person_revisions",

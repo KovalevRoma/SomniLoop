@@ -45,6 +45,7 @@ from somniloop.core.telegram_import import MIN_PERSONAL_MESSAGES, scan_telegram_
 from .controls import RoundedDialog as QDialog
 from .controls import ScrollDateEdit as QDateEdit
 from .controls import polish_dialog_buttons
+from .rich_text import RichTextEditor
 from .widgets import SmartPlainTextEdit
 
 MODEL_URL = "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true"
@@ -351,8 +352,8 @@ class CreateTrackerDialog(QDialog):
         self.validation_message.setWordWrap(True)
         self.validation_message.hide()
         self.name_edit.textChanged.connect(lambda: self.validation_message.hide())
-        self.description_edit = SmartPlainTextEdit()
-        self.description_edit.setMaximumHeight(90)
+        self.description_edit = RichTextEditor()
+        self.description_edit.setMaximumHeight(300)
         self.mode_combo = QComboBox()
         self.mode_combo.addItem(i18n.t("regular"), TrackerMode.REGULAR)
         self.mode_combo.addItem(i18n.t("manual_mode"), TrackerMode.MANUAL)
@@ -556,7 +557,7 @@ class CreateTrackerDialog(QDialog):
             task_names = task_names or [self.name_edit.text().strip()]
         return {
             "name": self.name_edit.text(),
-            "description": self.description_edit.toPlainText(),
+            "description": self.description_edit.source(),
             "mode": mode,
             "schedule_type": kind,
             "schedule": payload,
@@ -621,7 +622,7 @@ class TaskEditDialog(QDialog):
         form = QFormLayout()
         root.addLayout(form)
         self.name_edit = QLineEdit(task.name if task else "")
-        self.details_edit = SmartPlainTextEdit(task.details if task else "")
+        self.details_edit = RichTextEditor(task.details if task else "")
         self.details_edit.setMaximumHeight(90)
         form.addRow(i18n.t("name"), self.name_edit)
         form.addRow(i18n.t("description"), self.details_edit)
@@ -678,12 +679,12 @@ class TaskEditDialog(QDialog):
 
     def values(self) -> tuple[str, str, ScheduleType | None, dict]:
         if not self.collection:
-            return self.name_edit.text(), self.details_edit.toPlainText(), None, {}
+            return self.name_edit.text(), self.details_edit.source(), None, {}
         kind = ScheduleType(self.schedule_combo.currentData())
         payload = {"day": self.day_spin.value()}
         if kind == ScheduleType.YEARLY:
             payload["month"] = self.month_spin.value()
-        return self.name_edit.text(), self.details_edit.toPlainText(), kind, payload
+        return self.name_edit.text(), self.details_edit.source(), kind, payload
 
 
 class SettingsDialog(QDialog):

@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
-    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -31,9 +30,10 @@ from somniloop.core.i18n import I18n
 from somniloop.knowledge.people import format_person_details
 
 from .activity_scrollbar import ActivityScrollBar
-from .controls import BirthdayEdit, polish_dialog_buttons, rich_details, show_saved
+from .controls import BirthdayEdit, polish_dialog_buttons, show_saved
 from .controls import RoundedDialog as QDialog
 from .controls import ScrollDateEdit as QDateEdit
+from .rich_text import RichTextEditor, RichTextView
 from .widgets import SmartPlainTextEdit
 
 
@@ -53,7 +53,7 @@ class PersonDetailsDialog(QDialog):
         self.setMinimumSize(620, 560)
         root = QVBoxLayout(self)
         form = QFormLayout()
-        self.biography = SmartPlainTextEdit(person.biography)
+        self.biography = RichTextEditor(person.biography)
         self.education = QLineEdit(person.education)
         self.occupation = QLineEdit(person.occupation)
         self.facts = SmartPlainTextEdit("\n".join(person.facts))
@@ -93,7 +93,7 @@ class ClarificationDialog(QDialog):
         question_label.setWordWrap(True)
         question_label.setObjectName("sectionTitle")
         root.addWidget(question_label)
-        self.answer = SmartPlainTextEdit(answer)
+        self.answer = RichTextEditor(answer)
         self.answer.setPlaceholderText(
             "Например: это один человек, но он сменил место работы в 2024 году…"
         )
@@ -122,8 +122,7 @@ class BioDialog(QDialog):
         root = QVBoxLayout(self)
         form = QFormLayout()
         self.name_edit = QLineEdit(self._original[0])
-        self.bio_edit = SmartPlainTextEdit(self._original[1])
-        self.bio_edit.setVerticalScrollBar(ActivityScrollBar(self.bio_edit))
+        self.bio_edit = RichTextEditor(self._original[1])
         self.bio_edit.setPlaceholderText(i18n.t("bio_placeholder"))
         form.addRow(i18n.t("your_name"), self.name_edit)
         form.addRow(i18n.t("bio"), self.bio_edit)
@@ -139,7 +138,7 @@ class BioDialog(QDialog):
         root.addWidget(buttons)
 
     def _persist(self) -> None:
-        current = (self.name_edit.text().strip(), self.bio_edit.toPlainText().strip())
+        current = (self.name_edit.text().strip(), self.bio_edit.source().strip())
         if current == self._original:
             return
         self.repository.save_profile(*current)
@@ -201,7 +200,7 @@ class DiaryDialog(QDialog):
         form.addRow(i18n.t("entry_date"), self.entry_date)
         form.addRow(i18n.t("note_title"), self.title_edit)
         editor_layout.addLayout(form)
-        self.content_edit = SmartPlainTextEdit()
+        self.content_edit = RichTextEditor()
         self.content_edit.setPlaceholderText(i18n.t("diary_placeholder"))
         editor_layout.addWidget(self.content_edit, 1)
         self.updated_label = QLabel()
@@ -310,7 +309,7 @@ class DiaryDialog(QDialog):
         if self._loading:
             return
         title = self.title_edit.text().strip()
-        content = self.content_edit.toPlainText().strip()
+        content = self.content_edit.source().strip()
         if self.current_note_id is None and not (title or content):
             return
         if not title:
@@ -531,8 +530,7 @@ class PeopleDialog(QDialog):
         story_title = QLabel(i18n.t("person_story"))
         story_title.setObjectName("sectionTitle")
         editor_layout.addWidget(story_title)
-        self.story_edit = SmartPlainTextEdit()
-        self.story_edit.setVerticalScrollBar(ActivityScrollBar(self.story_edit))
+        self.story_edit = RichTextEditor()
         self.story_edit.setPlaceholderText(i18n.t("person_story_placeholder"))
         self.story_edit.setMinimumHeight(130)
         editor_layout.addWidget(self.story_edit, 1)
@@ -559,8 +557,7 @@ class PeopleDialog(QDialog):
         facts_hint.setObjectName("muted")
         facts_hint.setWordWrap(True)
         editor_layout.addWidget(facts_hint)
-        self.facts_view = QTextBrowser()
-        self.facts_view.setVerticalScrollBar(ActivityScrollBar(self.facts_view))
+        self.facts_view = RichTextView()
         self.facts_view.setMinimumHeight(130)
         editor_layout.addWidget(self.facts_view, 1)
         self.clarifications_label = QLabel()
@@ -667,7 +664,9 @@ class PeopleDialog(QDialog):
         self.story_edit.setPlainText(person.raw_notes)
         graph_date = self.repository.get_setting("graph_updated_at", "")[:10]
         as_of = datetime.fromisoformat(graph_date).date() if graph_date else None
-        self.facts_view.setHtml(rich_details(format_person_details(asdict(person), as_of)))
+        fields = {**asdict(person), "biography": ""}
+        biography = ("## Биография\n\n" + person.biography + "\n\n") if person.biography else ""
+        self.facts_view.setText(biography + format_person_details(fields, as_of))
         links = []
         for index, item in enumerate(person.clarifications):
             if not isinstance(item, dict):
@@ -701,7 +700,7 @@ class PeopleDialog(QDialog):
             self.current_person_id,
             name,
             self.relationship_edit.text(),
-            self.story_edit.toPlainText(),
+            self.story_edit.source(),
             birth_date=self.birthday_edit.value()
             if self.birthday_edit.value() != self._loaded_birth
             else None,
@@ -731,7 +730,7 @@ class PeopleDialog(QDialog):
             return
         self.repository.save_person_details(
             person.id,
-            biography=dialog.biography.toPlainText(),
+            biography=dialog.biography.source(),
             education=dialog.education.text(),
             occupation=dialog.occupation.text(),
             facts=dialog.facts.toPlainText().splitlines(),
@@ -754,7 +753,7 @@ class PeopleDialog(QDialog):
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        self.repository.save_clarification(person.id, index, dialog.answer.toPlainText())
+        self.repository.save_clarification(person.id, index, dialog.answer.source())
         self.data_changed.emit()
         self._load_person(person.id)
         show_saved(self, self.i18n.t("saved"))

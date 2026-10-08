@@ -16,12 +16,18 @@ Built with **Python, PySide6, and SQLite**. Developed primarily on **Ubuntu 24.0
 
 ### Habits and planning
 
-- A unified **Today** view for habits, dated plans, and due or overdue one-off tasks.
+- **My day**: an explicit daily plan with priority/date-based suggestions.
+- **Projects** connecting tasks, dated plans and habits, with outcomes and task progress.
+- A quick-capture **Inbox** (Ctrl+K), separate work dates, priorities and next actions.
+- Full task editor, compact date picker and one-click completion with undo.
+- Overdue, next-week and past-intention filters for regular review.
 - Quick completion buttons, checklists, streaks, and editable calendar history.
 - Daily, interval, weekday, weekly-quota, monthly, and yearly schedules.
 - Manually scheduled plans with different checklist items for each date.
 - Search, sorting, collapsible details, and an archive with restoration.
 - A compact, responsive dashboard with light and dark themes.
+
+See [the workspace guide and research rationale](docs/productivity-workspace.md).
 
 Checklist items are either complete or incomplete. A whole day or task can still
 be partially complete when only some items are done. Partially completed scheduled

@@ -36,7 +36,7 @@ class CompletionMonitor:
             for identifier, done in items:
                 key = ("planner", task.id, identifier)
                 states[key] = bool(done)
-                if date.fromisoformat(task.due_date) <= data.today:
+                if task.due_date and date.fromisoformat(task.due_date) <= data.today:
                     due.add(key)
         # Completed overdue plans leave the pending snapshot immediately. Verify
         # their cached day summary instead of treating disappearance as completion.

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from PySide6.QtCore import QDate, Qt, QTime, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractSpinBox,
     QCheckBox,
+    QComboBox,
     QDialogButtonBox,
     QFormLayout,
     QFrame,
@@ -14,14 +14,15 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QTabWidget,
-    QTimeEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from somniloop.core.dates import display_date
 
-from .controls import RoundedDialog, ScrollDateEdit, link_label, polish_dialog_buttons, show_saved
+from .controls import RoundedDialog, link_label, polish_dialog_buttons, show_saved
+from .rich_text import RichTextEditor, RichTextView
+from .task_date_picker import TaskDateField
 from .widgets import SmartPlainTextEdit
 
 
@@ -39,52 +40,48 @@ class PlannerDialog(RoundedDialog):
         from PySide6.QtWidgets import QLineEdit
 
         self.repository, self.i18n, self.task = repository, i18n, task
-        self.setWindowTitle(i18n.t("planner_task"))
+        self.setWindowTitle(("Изменить задачу" if task else "Новая задача") if i18n.language == "ru" else ("Edit task" if task else "New task"))
+        self.setObjectName("taskEditor")
         self.resize(620, 440)
         root = QVBoxLayout(self)
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         self.title_edit = QLineEdit(task.title if task else "")
+        self.title_edit.setPlaceholderText("Название задачи" if i18n.language == "ru" else "Task title")
         self.validation_message = QLabel(i18n.t("name_required"))
         self.validation_message.setObjectName("attention")
         self.validation_message.setWordWrap(True)
         self.validation_message.hide()
         self.title_edit.textChanged.connect(lambda: self.validation_message.hide())
-        self.date_edit = ScrollDateEdit(
-            QDate.fromString(task.due_date, "yyyy-MM-dd") if task else QDate.currentDate()
-        )
-        self.description_edit = SmartPlainTextEdit(task.description if task else "")
-        self.description_edit.setMaximumHeight(90)
-        time_row = QWidget()
-        time_layout = QHBoxLayout(time_row)
-        time_layout.setContentsMargins(0, 0, 0, 0)
-        self.has_time = QCheckBox(i18n.t("planner_set_time"))
-        self.time_edit = QTimeEdit()
-        self.time_edit.setObjectName("timePicker")
-        self.time_edit.setDisplayFormat("HH:mm")
-        self.time_edit.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
-        self.time_edit.setMinimumWidth(96)
-        self.time_edit.setAccessibleName(i18n.t("planner_time"))
-        self.time_edit.setTime(QTime.fromString(task.due_time, "HH:mm") if task and task.due_time else QTime(9, 0))
-        self.has_time.setChecked(bool(task and task.due_time))
-        self.time_edit.setEnabled(self.has_time.isChecked())
-        self.has_time.toggled.connect(self.time_edit.setEnabled)
-        time_layout.addWidget(self.has_time)
-        time_layout.addWidget(self.time_edit)
-        time_layout.addStretch()
+        self.date_field = TaskDateField(i18n.language, task.due_date if task else "",
+                                        task.due_time if task else "")
+        self.description_edit = RichTextEditor(task.description if task else "")
+        self.description_edit.setMinimumHeight(200)
+        self.description_edit.setMaximumHeight(360)
         form.addRow(i18n.t("name"), self.title_edit)
         form.addRow("", self.validation_message)
-        form.addRow(i18n.t("selected_date"), self.date_edit)
-        form.addRow(i18n.t("planner_time"), time_row)
+        form.addRow("Срок" if i18n.language == "ru" else "Date", self.date_field)
         form.addRow(i18n.t("description"), self.description_edit)
+        self.project = QComboBox()
+        self.project.addItem("Без проекта" if i18n.language == "ru" else "No project", None)
+        for project in repository.work_projects(True):
+            self.project.addItem(project["name"], project["id"])
+        self.work_values = repository.work_metadata().get(("planner", task.id), {}) if task else {}
+        self.project.setCurrentIndex(max(0, self.project.findData(self.work_values.get("project_id"))))
+        form.addRow("Проект" if i18n.language == "ru" else "Project", self.project)
+        form.setVerticalSpacing(12)
         root.addLayout(form)
-        root.addWidget(QLabel(i18n.t("tasks")))
+        self.has_items = QCheckBox("Добавить подпункты" if i18n.language == "ru" else "Add checklist")
+        self.has_items.setChecked(bool(task and task.items))
+        root.addWidget(self.has_items)
         self.items_edit = SmartPlainTextEdit(
             "\n".join(item["title"] for item in task.items) if task else ""
         )
         self.items_edit.setPlaceholderText(i18n.t("one_task_per_line"))
         root.addWidget(self.items_edit, 1)
+        self.items_edit.setVisible(self.has_items.isChecked())
+        self.has_items.toggled.connect(self.items_edit.setVisible)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -100,14 +97,19 @@ class PlannerDialog(RoundedDialog):
             self.validation_message.show()
             self.title_edit.setFocus()
             return
-        self.repository.save_planner_task(
+        self.saved_task_id = self.repository.save_planner_task(
             self.title_edit.text(),
-            self.date_edit.date().toPython(),
-            self.description_edit.toPlainText(),
-            self.items_edit.toPlainText().splitlines(),
+            date.fromisoformat(self.date_field.day) if self.date_field.day else None,
+            self.description_edit.source(),
+            self.items_edit.toPlainText().splitlines() if self.has_items.isChecked() else [],
             self.task.id if self.task else None,
-            due_time=self.time_edit.time().toString("HH:mm") if self.has_time.isChecked() else "",
+            due_time=self.date_field.clock if self.date_field.day else "",
         )
+        self.repository.save_work_item("planner", self.saved_task_id,
+                                       project_id=self.project.currentData(),
+                                       priority=self.work_values.get("priority", 0),
+                                       planned_on=self.work_values.get("planned_on", ""),
+                                       next_action=self.work_values.get("next_action", ""))
         if self.parentWidget():
             show_saved(self.parentWidget(), self.i18n.t("saved"))
         self.accept()
@@ -187,11 +189,11 @@ class PlannerColumn(QFrame):
             layout.addWidget(title)
             date_label = QLabel(display_date(task.due_date) + (" · " + task.due_time if task.due_time else ""))
             date_label.setObjectName(
-                "attention" if date.fromisoformat(task.due_date) < date.today() else "muted"
+                "attention" if task.due_date and date.fromisoformat(task.due_date) < date.today() else "muted"
             )
             layout.addWidget(date_label)
             if task.description:
-                layout.addWidget(link_label(task.description))
+                layout.addWidget(RichTextView(task.description))
             for item in task.items:
                 row = QHBoxLayout()
                 checkbox = QCheckBox()

@@ -25,6 +25,7 @@ from somniloop.core.models import ScheduleType, TaskState, TrackerMode
 
 from .dashboard_data import local_date, tracker_snapshot
 from .icons import interface_icon
+from .rich_text import RichTextView
 
 
 class WrapLabel(QLabel):
@@ -270,7 +271,7 @@ class TrackerCard(QFrame):
         self.progress = QLabel()
         self.progress.setObjectName("muted")
         root.addWidget(self.progress)
-        self.description = WrapLabel()
+        self.description = RichTextView()
         self.description.setObjectName("muted")
         self.description.hide()
         root.addWidget(self.description)
@@ -332,15 +333,12 @@ class TrackerCard(QFrame):
             return
         self.snapshot, self.tracker, self._hide_done = snapshot, snapshot.tracker, hide_done
         tracker, meta = snapshot.tracker, snapshot.meta
-        accent = "#7f6ac6" if tracker.mode == TrackerMode.REGULAR else "#538ebd"
         overdue = (
             tracker.mode == TrackerMode.MANUAL
             and snapshot.next_date
             and snapshot.next_date < date.today()
         )
-        if overdue:
-            accent = "#bd7981"
-        self.setStyleSheet(f"QFrame#card {{ border-left: 3px solid {accent}; }}")
+        self.setStyleSheet("")
         self.title.setText(tracker.name)
         self.attention.setVisible(meta.needs_attention)
         self.streak.setText(self.i18n.t("streak", value=meta.streak))
@@ -422,7 +420,7 @@ class PlannerCard(QFrame):
         self.expand.setStyleSheet(
             "text-align:left; padding:4px; border:none; background:transparent;"
         )
-        self.description = WrapLabel()
+        self.description = RichTextView()
         self.description.setObjectName("muted")
         self.expand.toggled.connect(self.description.setVisible)
         root.addWidget(self.expand)
@@ -434,12 +432,10 @@ class PlannerCard(QFrame):
         if self.task == task and getattr(self, "_hide_done", None) == hide_done:
             return
         self.task, self._hide_done = task, hide_done
-        overdue = date.fromisoformat(task.due_date) < date.today() and not task.completed
-        self.setStyleSheet(
-            f"QFrame#card {{ border-left:3px solid {'#bc767c' if overdue else '#569c83'}; }}"
-        )
+        overdue = bool(task.due_date and date.fromisoformat(task.due_date) < date.today() and not task.completed)
+        self.setStyleSheet("")
         self.title.setText(task.title)
-        stamp = local_date(task.due_date, self.i18n)
+        stamp = local_date(task.due_date, self.i18n) if task.due_date else ("Без срока" if self.i18n.language == "ru" else "No date")
         if task.due_time:
             stamp += " · " + task.due_time
         items = [

@@ -48,6 +48,16 @@ def main():
         window.show()
         state = {}
 
+        def check_visible_bounds():
+            character = window.character
+            assert character.content_bounds is not None
+            x0, y0, x1, y1 = character.content_bounds
+            assert character.x() + round(x0 * character.width()) >= 0
+            assert character.y() + round(y0 * character.height()) >= 0
+            assert character.x() + round(x1 * character.width()) <= window.width()
+            assert character.y() + round(y1 * character.height()) <= window.height()
+            assert window.rect().contains(character.status.geometry())
+
         def step(action):
             try:
                 action()
@@ -75,8 +85,7 @@ def main():
             state["hash"] = hashlib.sha256(bytes(image.constBits())).hexdigest()
             image.save(str(args.output / "epsilon-initial.png"))
             window.grab().save(str(args.output / "somniloop-epsilon.png"))
-            assert character.geometry().right() < window.width()
-            assert character.geometry().bottom() < window.height()
+            check_visible_bounds()
             probe = QPushButton("Click-through probe", window)
             probe.setGeometry(character.geometry())
             probe.clicked.connect(lambda: checks.append("click-through"))
@@ -111,7 +120,7 @@ def main():
 
         def resized():
             character = window.character
-            assert window.rect().contains(character.geometry())
+            check_visible_bounds()
             assert not character.mask().isEmpty()
             character.image.save(str(args.output / "epsilon-blushing.png"))
             window.grab().save(str(args.output / "somniloop-resized.png"))
@@ -122,7 +131,9 @@ def main():
 
         def modal():
             character = window.character
-            assert not character.isVisible() and not character.timer.isActive()
+            assert character.isVisible() and character.timer.isActive()
+            assert character.isEnabled() and character.status.isVisible()
+            window.grab().save(str(args.output / "somniloop-modal-character.png"))
             state["modal"].release()
             state["dialog"].close()
             character.hide()
@@ -161,7 +172,27 @@ def main():
             character.resetExpression()
             assert character.status.isVisible()
             assert window.rect().contains(character.status.geometry())
-            assert character.status.y() > character.geometry().bottom()
+            assert character.content_bottom is not None
+            assert character.status.y() == character.y() + round(character.height() * character.content_bottom) + 4
+            original = character.pos()
+            character.status.dragged.emit(QPoint(-80, -30))
+            character.status.drag_finished.emit()
+            assert character.pos() == original + QPoint(-80, -30)
+            window.grab().save(str(args.output / "somniloop-dragged-status.png"))
+            checks.append("status-drag-and-gap")
+            return_position = character.pos()
+            for dx, dy in ((-10000, -10000), (10000, -10000), (-10000, 10000), (10000, 10000)):
+                character.status.dragged.emit(QPoint(dx, dy))
+                check_visible_bounds()
+                x0, y0, x1, _ = character.content_bounds
+                assert character.x() + round((x0 if dx < 0 else x1) * character.width()) == (0 if dx < 0 else window.width())
+                if dy < 0:
+                    assert character.y() + round(y0 * character.height()) == 0
+                else:
+                    assert character.status.geometry().bottom() == window.height() - 1
+            window.grab().save(str(args.output / "somniloop-at-edge.png"))
+            character.status.dragged.emit(return_position - character.pos())
+            checks.append("all-window-edges")
 
             def point(part, x, y):
                 bounds = character.renderer.part_bounds(part, character.width(), character.height())
@@ -233,8 +264,7 @@ def main():
             character.config.interaction = False
             character._touch_reaction("chest")
             assert character.status.emotion == "Normal"
-            panel = character.motion_panel
-            assert panel is None
+            assert not hasattr(character, "motion_panel")
             assert character.x() == window.width() - character.width() - character.config.offset_x
             clips = [(group, index) for group, motions in character.motions.items()
                      for index in range(len(motions))

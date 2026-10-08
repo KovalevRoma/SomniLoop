@@ -135,14 +135,7 @@ class TodayOccurrence(QFrame):
         if overdue:
             caption += " · " + self.i18n.t("home_overdue", date=local_date(self.day, self.i18n))
         self.caption.setText(caption)
-        accent = (
-            "#bd7981"
-            if overdue
-            else "#7f6ac6"
-            if record.tracker.mode == TrackerMode.REGULAR
-            else "#538ebd"
-        )
-        self.setStyleSheet(f"QFrame#card {{ border-left: 3px solid {accent}; }}")
+        self.setStyleSheet("")
         self.rows.update_rows(
             [(item.task.id, item.task.name, item.state) for item in items], hide_done
         )
@@ -323,7 +316,7 @@ class PlanAgendaCard(QFrame):
         super().__init__(parent)
         self.repository, self.record = repository, record
         self.setObjectName("card")
-        self.setStyleSheet("QFrame#card {border-left:3px solid #538ebd;}")
+        self.setStyleSheet("")
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)

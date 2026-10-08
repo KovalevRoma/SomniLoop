@@ -24,6 +24,7 @@ from .dashboard_cards import TrackerCard, WrapLabel
 from .dashboard_data import DashboardData, local_date
 from .dashboard_sections import DashboardFilters, PlannerAgenda, TodayBlock
 from .planner import PlannerDialog
+from .workspace import WorkSpace
 
 
 class ResponsiveColumns(QWidget):
@@ -79,7 +80,7 @@ class Dashboard(QWidget):
     calendar_requested = Signal(int)
     archive_requested = Signal()
 
-    def __init__(self, repository, i18n, parent=None):
+    def __init__(self, repository, i18n, parent=None, *, productivity=False):
         super().__init__(parent)
         self.repository, self.i18n = repository, i18n
         self.setObjectName("dashboard")
@@ -102,7 +103,7 @@ class Dashboard(QWidget):
         outer.setSpacing(0)
         self.body = QWidget()
         self.body.setObjectName("flat")
-        self.body.setMaximumWidth(1680)
+        self.body.setMaximumWidth(1280 if productivity else 1680)
         self.body.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         outer.addStretch(1)
         outer.addWidget(self.body, 1000, Qt.AlignmentFlag.AlignTop)
@@ -114,28 +115,36 @@ class Dashboard(QWidget):
         self.date_label = QLabel()
         self.date_label.setObjectName("dashboardDate")
         self.date_label.setWordWrap(True)
-        header.addWidget(self.date_label, 1)
+        if not productivity:
+            header.addWidget(self.date_label, 1)
+        else:
+            header.addStretch()
         self.add = QPushButton("+ " + i18n.t("home_add"))
         self.add.setObjectName("primary")
         menu = QMenu(self.add)
         for kind, title_key in (
             ("habit", "home_habit"),
-            ("plan", "home_plan"),
             ("task", "planner_task"),
         ):
             menu.addAction(i18n.t(title_key), lambda key=kind: self._create(key))
         self.add.setMenu(menu)
-        header.addWidget(self.add)
-        content.addLayout(header)
+        if not productivity:
+            header.addWidget(self.add)
+            content.addLayout(header)
+        self.workspace = WorkSpace(repository, i18n, self) if productivity else None
+        if self.workspace:
+            self.workspace.capture_layout.addWidget(self.add)
+            self.workspace.changed.connect(self._planner_changed)
+            content.addWidget(self.workspace)
         self.today = TodayBlock(repository, i18n)
         self.today.tracker_changed.connect(self._tracker_changed)
         self.today.planner_changed.connect(self._planner_changed)
         self.today.edit_planner.connect(self._edit_planner)
         content.addWidget(self.today)
-        divider = QFrame()
-        divider.setObjectName("sectionDivider")
-        divider.setFixedHeight(4)
-        content.addWidget(divider)
+        self.divider = QFrame()
+        self.divider.setObjectName("sectionDivider")
+        self.divider.setFixedHeight(4)
+        content.addWidget(self.divider)
         self.library = QFrame()
         self.library.setObjectName("panel")
         self.library.setMinimumWidth(0)
@@ -164,7 +173,18 @@ class Dashboard(QWidget):
         self.columns = ResponsiveColumns(self.library, self.planner)
         content.addWidget(self.columns)
         self.scroll.setWidget(self.container)
+        if self.workspace:
+            self.workspace.view_changed.connect(self._workspace_view)
         self.refresh()
+
+    def _workspace_view(self, *_):
+        habits = self.workspace.tabs.currentIndex() == 1
+        self.today.hide()
+        self.divider.hide()
+        self.columns.setVisible(habits)
+        self.planner.hide()
+        self.columns.divider.hide()
+        self.columns.grid.setColumnStretch(2, 0)
 
     def _create(self, kind):
         if kind == "task":
@@ -197,13 +217,17 @@ class Dashboard(QWidget):
             self.feedback_invalidated.emit()
         if reaction is not None:
             self.task_completed.emit(reaction)
-        self.date_label.setText(local_date(self.data.today, self.i18n, full=True))
+        if not self.workspace:
+            self.date_label.setText(local_date(self.data.today, self.i18n, full=True))
         self.today.set_data(self.data)
         self.planner.set_tasks(
             self.data.planner,
             [record for record in self.data.trackers.values() if record.tracker.mode == TrackerMode.MANUAL],
         )
         self._render_library()
+        if self.workspace:
+            self.workspace.refresh(self.data)
+            self._workspace_view()
 
     def _render_library(self):
         records = self.data.filtered(
@@ -244,6 +268,12 @@ class Dashboard(QWidget):
                 card.calendar_requested.connect(self.calendar_requested)
                 card.tracker_changed.connect(self._tracker_changed)
                 self.cards[identifier] = card
+                if self.workspace:
+                    menu = card.findChild(QMenu)
+                    menu.addAction(self.workspace.tr("Изменить проект", "Change project"),
+                                   lambda checked=False, key=identifier: self.workspace.organize(next(
+                                       entry for entry in self.workspace.entries
+                                       if entry.key == ("tracker", key))))
             card.update_snapshot(record, self.filters.hide_done.isChecked())
             card.set_compact(bool(record.occurrences))
             card.show()

@@ -14,7 +14,7 @@ class PlanningRepository:
     def save_planner_task(
         self,
         title: str,
-        due_date: date,
+        due_date: date | None,
         description: str = "",
         items: list[str] | None = None,
         task_id: int | None = None,
@@ -31,13 +31,13 @@ class PlanningRepository:
             if task_id is None:
                 cursor = self.connection.execute(
                     "INSERT INTO planner_tasks(title, due_date, description, updated_at, due_time) VALUES (?, ?, ?, ?, ?)",
-                    (title.strip(), due_date.isoformat(), description.strip(), now, due_time or ""),
+                    (title.strip(), due_date.isoformat() if due_date else "", description.strip(), now, due_time or ""),
                 )
                 task_id = int(cursor.lastrowid)
             else:
                 self.connection.execute(
                     "UPDATE planner_tasks SET title=?, due_date=?, description=?, updated_at=?, due_time=COALESCE(?, due_time) WHERE id=?",
-                    (title.strip(), due_date.isoformat(), description.strip(), now, due_time, task_id),
+                    (title.strip(), due_date.isoformat() if due_date else "", description.strip(), now, due_time, task_id),
                 )
             if items is not None:
                 previous = defaultdict(deque)

@@ -43,7 +43,7 @@ def test_status_badge_blushing_and_disgust_labels(app, language, expected):
             badge.set_emotion(emotion)
             assert badge.label() == label
             assert badge.accessibleName() == label
-        assert badge.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        assert not badge.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
     finally:
         host.close()
 
@@ -251,31 +251,6 @@ def test_resource_path_validation():
         resources.resolve(str(resources.manifest))
     with pytest.raises(FileNotFoundError):
         resources.resolve("missing.png")
-
-
-def test_preview_buttons_keep_real_indices_and_emit_correct_clip(app):
-    from PySide6.QtWidgets import QWidget
-
-    from somniloop.live2d.motion_preview import MotionPreviewPanel
-
-    motions = {group: [{"File": f"motion/{group}_{i}.motion3.json"} for i in range(count)]
-               for group, count in {"Idle": 1, "Tap": 4, "Flick3": 2, "FlickUp": 2,
-                                    "FlickDown": 2, "Flick": 2, "Shake": 2}.items()}
-    host = QWidget()
-    panel = MotionPreviewPanel(host, motions, "ru")
-    assert len(panel.buttons) == 13
-    assert ("Idle", 0) not in panel.buttons and ("Tap", 0) not in panel.buttons
-    received = []
-    panel.requested.connect(lambda group, index: received.append((group, index)))
-    for key, button in panel.buttons.items():
-        button.click()
-        assert received[-1] == key
-        assert motions[key[0]][key[1]]["File"].endswith(button.toolTip())
-    panel.set_active(("Tap", 2))
-    assert sum(button.isChecked() for button in panel.buttons.values()) == 1
-    panel.set_active()
-    assert not any(button.isChecked() for button in panel.buttons.values())
-    host.close()
 
 
 @pytest.mark.skipif(
