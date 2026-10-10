@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from platformdirs import user_data_dir
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from somniloop.core.database import Repository
@@ -24,6 +25,9 @@ def run() -> int:
     application = QApplication(sys.argv)
     application.setApplicationName("SomniLoop")
     application.setOrganizationName("SomniLoop")
+    application.setApplicationDisplayName("SomniLoop")
+    application.setDesktopFileName("somniloop")
+    application.setWindowIcon(QIcon(str(icon_path())))
     repository = Repository(data_directory() / "somniloop.db")
     window = MainWindow(repository, icon_path())
     window.show()

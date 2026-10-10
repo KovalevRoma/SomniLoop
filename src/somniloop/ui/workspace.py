@@ -21,6 +21,7 @@ from .dashboard_cards import WrapLabel
 from .planner import PlannerDialog
 from .project_tile import ProjectGrid, ProjectTile, project_accent
 from .task_actions import TaskActions
+from .task_timeline import TaskTimeline
 from .work_row import WorkRow
 from .workspace_data import order_work, work_entries
 from .workspace_forms import CaptureScheduleDialog, ProjectDialog, text
@@ -46,7 +47,7 @@ class WorkSpace(TaskActions, QWidget):
         root.setSpacing(12)
         self.capture = QLineEdit()
         self.capture.setObjectName("workCapture")
-        self.capture.setPlaceholderText(self.tr("Быстро записать дело во входящие…  Enter · Ctrl+K", "Capture a task in Inbox…  Enter · Ctrl+K"))
+        self.capture.setPlaceholderText(self.tr("Записать дело на разбор…  Enter · Ctrl+K", "Capture something to sort…  Enter · Ctrl+K"))
         self.capture.setClearButtonEnabled(True)
         self.capture.returnPressed.connect(self.capture_task)
         self.capture_layout = QHBoxLayout()
@@ -60,12 +61,16 @@ class WorkSpace(TaskActions, QWidget):
         self.tabs.setDrawBase(False)
         self.tabs.setUsesScrollButtons(True)
         for ru, en in (("Задачи", "Tasks"),
-                       ("Привычки", "Habits"), ("Проекты", "Projects"), ("Входящие", "Inbox")):
+                       ("Привычки", "Habits"), ("Проекты", "Projects"), ("На разбор", "To sort"),
+                       ("График", "Chart")):
             self.tabs.addTab(self.tr(ru, en))
         self.tabs.currentChanged.connect(self.change_view)
         self.tabs.tabBarClicked.connect(self.change_view)
         self.tabs.currentChanged.connect(self.view_changed)
         root.addWidget(self.tabs)
+        self.timeline = TaskTimeline(self)
+        root.addWidget(self.timeline)
+        self.timeline.hide()
         self.summary = WrapLabel()
         self.summary.setObjectName("workSummary")
         root.addWidget(self.summary)
@@ -170,6 +175,7 @@ class WorkSpace(TaskActions, QWidget):
 
     def refresh(self, data):
         self.snapshot = data
+        self.timeline.refresh()
         self.entries = work_entries(data, self.repository.work_metadata())
         self.projects = {p["id"]: p for p in self.repository.work_projects(True)}
         self.project_counts = {row["project_id"]: dict(row) for row in self.repository.connection.execute(
@@ -184,7 +190,7 @@ class WorkSpace(TaskActions, QWidget):
             self.project_filter.addItem(project["name"], project["id"])
         self.project_filter.setCurrentIndex(max(0, self.project_filter.findData(selected)))
         self.project_filter.blockSignals(False)
-        self.tabs.setTabText(3, self.tr("Входящие", "Inbox") + f" ({len(self.repository.work_inbox())})")
+        self.tabs.setTabText(3, self.tr("На разбор", "To sort") + f" ({len(self.repository.work_inbox())})")
         self.render()
 
     def render(self, *_):
@@ -206,7 +212,7 @@ class WorkSpace(TaskActions, QWidget):
         if (view == 2 and any(isinstance(w, ProjectGrid) for w in self.extra_widgets)
                 and getattr(self, "_project_signature", None) == self.project_signature()):
             return
-        section = ("task", "habit", "project", "inbox")[view]
+        section = ("task", "habit", "project", "inbox", "chart")[view]
         if self.tabs.property("section") != section:
             self.tabs.setProperty("section", section)
             self.tabs.style().unpolish(self.tabs)
@@ -225,7 +231,8 @@ class WorkSpace(TaskActions, QWidget):
             widget.deleteLater()
         self.extra_widgets.clear()
         self.add_project.setVisible(view == 2)
-        self.summary.setVisible(view != 1)
+        self.timeline.setVisible(view == 4)
+        self.summary.setVisible(view not in (1, 4))
         self.columns_header.setVisible(view == 0)
         self.selection_mode.setVisible(view == 0)
         self.selected_tasks.intersection_update(active_keys - set(self.held_completed))
@@ -237,7 +244,9 @@ class WorkSpace(TaskActions, QWidget):
         self.project_filter.setVisible(view == 0)
         self.scope.setVisible(view == 0)
         self.filters.setVisible(view == 0)
-        self.list_widget.setVisible(view != 1)
+        self.list_widget.setVisible(view not in (1, 4))
+        if view == 4:
+            return
         self.message.show()
         today = date.today().isoformat()
         pending = [e for e in self.entries if not e.done]
@@ -421,7 +430,7 @@ class WorkSpace(TaskActions, QWidget):
         captures = self.repository.work_inbox()
         self.message.hide()
         if not captures:
-            self.message.setText(self.tr("Нет входящих", "Inbox empty"))
+            self.message.setText(self.tr("Всё разобрано", "Nothing to sort"))
             self.message.show()
         for capture in captures:
             frame = QFrame()

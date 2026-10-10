@@ -4,7 +4,7 @@ import html
 import math
 import re
 
-from PySide6.QtCore import QEvent, Qt, QUrl, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import (
     QDesktopServices,
     QFont,
@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 
 from .activity_scrollbar import ActivityScrollBar
 from .controls import RoundedDialog, polish_dialog_buttons
+from .icons import interface_icon
 
 
 def safe_link(value):
@@ -261,15 +262,20 @@ class RichTextEditor(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(4)
         self.toolbar = QWidget(self)
+        self.toolbar.setObjectName("richTextToolbar")
         bar = QHBoxLayout(self.toolbar)
         bar.setContentsMargins(0, 0, 0, 0)
-        for label, action, tip in (("B", "bold", "Жирный / Bold · Ctrl+B"),
-                                   ("I", "italic", "Курсив / Italic · Ctrl+I"),
-                                   ("S̶", "strike", "Зачёркнутый / Strikethrough"),
-                                   ("↗", "link", "Ссылка / Link · Ctrl+K"),
-                                   ("+", "menu", "Блоки / Blocks · /")):
+        bar.setSpacing(4)
+        for icon, action, tip in (("bold", "bold", "Bold · Ctrl+B"),
+                                  ("italic", "italic", "Italic · Ctrl+I"),
+                                  ("strike", "strike", "Strikethrough"),
+                                  ("link", "link", "Link · Ctrl+K"),
+                                  ("add", "menu", "Insert block · /")):
             button = QToolButton()
-            button.setText(label)
+            button.setIcon(interface_icon(icon))
+            button.setIconSize(QSize(20, 20))
+            button.setFixedSize(34, 34)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setToolTip(tip)
             button.setAccessibleName(tip)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
