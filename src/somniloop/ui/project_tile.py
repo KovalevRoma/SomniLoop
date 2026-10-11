@@ -36,7 +36,6 @@ def project_accent(widget, color, dark=False):
         f"QFrame#workRow {{ background: {surface.name()}; border: none; border-radius: 12px; }}"
         f"QLabel#cardTitle, QLabel#muted, QLabel#projectText, QLabel#taskTitle {{ color: {foreground}; background: transparent; }}"
         f"QLabel#cardTitle {{ color: {title_color.name()}; }}"
-        f"QPushButton#projectChip {{ border-bottom: 2px solid {accent.name()}; }}"
     )
 
 

@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QPushButton, QSizePolicy
 
 from .dashboard_cards import WrapLabel
@@ -46,7 +46,8 @@ class WorkRow(QFrame):
         self.complete = QCheckBox()
         self.complete.setAccessibleName(workspace.tr("Выполнить задачу", "Complete task"))
         self.complete.setToolTip(self.complete.accessibleName())
-        self.complete.clicked.connect(lambda checked: workspace.complete_task(self.entry) if checked else None)
+        self.complete.clicked.connect(lambda checked: workspace.complete_task(self.entry)
+                                      if checked else workspace.uncomplete_held_task(self.entry.key))
         root.addWidget(self.complete)
         self.title = WrapLabel()
         self.title.setObjectName("taskTitle")
@@ -91,6 +92,12 @@ class WorkRow(QFrame):
         else:
             super().keyPressEvent(event)
 
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        if hasattr(self, 'entry') and self.entry.key in self.owner.held_completed:
+            QTimer.singleShot(0, self.owner,
+                              lambda key=self.entry.key: self.owner.release_completed_when_unhovered(key))
+
     def update_entry(self, entry):
         project = self.owner.projects.get(entry.project_id)
         signature = (entry, tuple(sorted(project.items())) if project else (), date.today())
@@ -113,7 +120,7 @@ class WorkRow(QFrame):
         self.setProperty("category", "habit" if entry.habit else "task")
         self.complete.setVisible(entry.kind == "planner")
         self.complete.setChecked(entry.done)
-        self.complete.setEnabled(not entry.done)
+        self.complete.setEnabled(not entry.done or entry.key in self.owner.held_completed)
         name = project["name"] if project else self.owner.tr("Без проекта", "No project")
         self.project_button.setToolTip(name)
         self.project_button.setText(self.project_button.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, 125))

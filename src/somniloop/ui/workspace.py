@@ -37,6 +37,7 @@ class WorkSpace(TaskActions, QWidget):
         self.entries, self.projects, self.rows = [], {}, {}
         self.selected_tasks = set()
         self.held_completed = {}
+        self.held_completion_snapshots = {}
         self.held_order = []
         self.visible_entries = []
         self.undo_completion = None
@@ -103,6 +104,11 @@ class WorkSpace(TaskActions, QWidget):
             self.scope.addItem(self.tr(ru, en))
         self.scope.currentIndexChanged.connect(self.render)
         filter_layout.addWidget(self.scope)
+        self.add_project_task = QPushButton(self.tr("+ Добавить задачу", "+ Add task"))
+        self.add_project_task.clicked.connect(
+            lambda: self.new_project_task(self.projects[self.project_filter.currentData()])
+        )
+        filter_layout.addWidget(self.add_project_task)
         self.add_project = QPushButton("+")
         self.add_project.setObjectName("newProject")
         self.add_project.setFixedSize(40, 40)
@@ -231,6 +237,7 @@ class WorkSpace(TaskActions, QWidget):
             widget.deleteLater()
         self.extra_widgets.clear()
         self.add_project.setVisible(view == 2)
+        self.add_project_task.setVisible(view == 0 and self.project_filter.currentData() is not None)
         self.timeline.setVisible(view == 4)
         self.summary.setVisible(view not in (1, 4))
         self.columns_header.setVisible(view == 0)

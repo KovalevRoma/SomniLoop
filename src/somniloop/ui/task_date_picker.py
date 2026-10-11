@@ -1,6 +1,6 @@
 """Compact date property popup shared by task rows and the task editor."""
 
-from PySide6.QtCore import QDate, QLocale, QPoint, Qt, QTime, Signal
+from PySide6.QtCore import QDate, QLocale, QPoint, Qt, QTime, QTimer, Signal
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QCheckBox,
@@ -18,13 +18,14 @@ from PySide6.QtWidgets import (
 class TaskDatePopup(QFrame):
     chosen = Signal(str, object)
 
-    def __init__(self, anchor, language, day="", clock="", *, preserve_time=False):
+    def __init__(self, anchor, language, day="", clock="", *, preserve_time=False, project_days=None):
         super().__init__(anchor, Qt.WindowType.Popup)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setObjectName("taskDatePopup")
         self.anchor = anchor
         self.language = language
         self.day = day
+        self.project_days = project_days or {}
         self.preserve_time = preserve_time
         self.time_touched = False
         self.locale = QLocale("ru_RU" if language == "ru" else "en_GB")
@@ -46,6 +47,7 @@ class TaskDatePopup(QFrame):
             QFrame#taskDatePopup QPushButton:focus {{ border: 1px solid #7866df; }}
             QFrame#taskDatePopup QPushButton:checked {{ background: #6754ce; color: white; }}
             QFrame#taskDatePopup QPushButton[adjacent="true"] {{ color: #8996a8; }}
+            QFrame#taskDatePopup QPushButton[today="true"] {{ border: 2px solid #398de3; font-weight: 700; }}
             QFrame#taskDatePopup QLineEdit, QFrame#taskDatePopup QTimeEdit {{ background: {bg}; color: {fg}; border: 1px solid {border}; border-radius: 6px; padding: 5px; }}
             QFrame#taskDatePopup QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {border}; border-radius: 4px; background: {bg}; }}
             QFrame#taskDatePopup QCheckBox::indicator:checked {{ background: #6754ce; border-color: #6754ce; }}
@@ -112,6 +114,16 @@ class TaskDatePopup(QFrame):
         self.clear_button.clicked.connect(self.clear_date)
         root.addWidget(self.clear_button)
         self.render_month()
+        self.today = QDate.currentDate()
+        self.day_timer = QTimer(self)
+        self.day_timer.setInterval(60000)
+        self.day_timer.timeout.connect(self.refresh_today)
+        self.day_timer.start()
+
+    def refresh_today(self):
+        if self.today != QDate.currentDate():
+            self.today = QDate.currentDate()
+            self.render_month()
 
     def tr(self, ru, en):
         return ru if self.language == "ru" else en
@@ -123,7 +135,12 @@ class TaskDatePopup(QFrame):
             day = start.addDays(index)
             button.setProperty("date", day)
             button.setProperty("adjacent", day.month() != self.month.month())
-            button.setText(str(day.day()))
+            button.setProperty("today", day == QDate.currentDate())
+            tasks = self.project_days.get(day.toString("yyyy-MM-dd"), [])
+            button.setText(str(day.day()) + (" ·" if tasks else ""))
+            details = [self.tr("Сегодня", "Today")] if day == QDate.currentDate() else []
+            details.extend(f"{clock or self.tr('Без времени', 'No time')} — {title}" for clock, title in tasks)
+            button.setToolTip("\n".join(details))
             button.setAccessibleName(day.toString("yyyy-MM-dd"))
             button.setChecked(day.toString("yyyy-MM-dd") == self.day)
             button.style().unpolish(button)
@@ -203,6 +220,7 @@ class TaskDateField(QPushButton):
     def __init__(self, language, day="", clock="", parent=None):
         super().__init__(parent)
         self.language = language
+        self.project_days_provider = lambda: {}
         self.setObjectName("taskDateField")
         self.set_value(day, clock)
         self.clicked.connect(self.open_picker)
@@ -213,6 +231,7 @@ class TaskDateField(QPushButton):
         self.setText(label + (" · " + self.clock if self.clock else ""))
 
     def open_picker(self):
-        self.popup = TaskDatePopup(self, self.language, self.day, self.clock)
+        self.popup = TaskDatePopup(self, self.language, self.day, self.clock,
+                                   project_days=self.project_days_provider())
         self.popup.chosen.connect(self.set_value)
         self.popup.show_at_anchor()

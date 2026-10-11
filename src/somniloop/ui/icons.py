@@ -93,6 +93,49 @@ def _icon(name, light):
             painter.setPen(Qt.PenStyle.NoPen)
             for y in (5, 12, 19):
                 painter.drawEllipse(QPointF(12, y), 1.6, 1.6)
+        elif name in {"undo", "redo"}:
+            if name == "redo":
+                painter.translate(24, 0)
+                painter.scale(-1, 1)
+            path = QPainterPath(QPointF(4, 9))
+            path.cubicTo(15, 2, 22, 9, 19, 18)
+            painter.drawPath(path)
+            painter.drawLine(4, 4, 4, 9)
+            painter.drawLine(4, 9, 9, 10)
+        elif name == "cut":
+            painter.drawEllipse(QRectF(3, 14, 6, 6))
+            painter.drawEllipse(QRectF(15, 14, 6, 6))
+            painter.drawLine(8, 15, 18, 4)
+            painter.drawLine(16, 15, 6, 4)
+        elif name == "copy":
+            painter.drawRoundedRect(QRectF(8, 8, 12, 13), 2, 2)
+            path = QPainterPath(QPointF(5, 16))
+            path.lineTo(3, 16)
+            path.lineTo(3, 3)
+            path.lineTo(15, 3)
+            path.lineTo(15, 5)
+            painter.drawPath(path)
+        elif name == "paste":
+            painter.drawRoundedRect(QRectF(5, 5, 14, 16), 2, 2)
+            painter.drawRoundedRect(QRectF(9, 2, 6, 5), 1, 1)
+            painter.drawLine(9, 12, 15, 12)
+            painter.drawLine(9, 16, 15, 16)
+        elif name == "delete":
+            painter.drawLine(4, 6, 20, 6)
+            painter.drawLine(9, 3, 15, 3)
+            path = QPainterPath(QPointF(6, 9))
+            path.lineTo(7, 21)
+            path.lineTo(17, 21)
+            path.lineTo(18, 9)
+            painter.drawPath(path)
+            painter.drawLine(10, 10, 10, 17)
+            painter.drawLine(14, 10, 14, 17)
+        elif name == "select_all":
+            painter.setPen(QPen(color, 1.5, Qt.PenStyle.DashLine))
+            painter.drawRect(QRectF(3, 3, 18, 18))
+            painter.setPen(QPen(color, 1.8))
+            for y in (8, 12, 16):
+                painter.drawLine(7, y, 17, y)
         else:
             raise ValueError(f"Unknown interface icon: {name}")
         painter.end()

@@ -26,6 +26,25 @@ def test_untouched_legacy_text_is_preserved_exactly(editor):
     assert editor.source() == value
 
 
+def test_custom_context_menu_preserves_native_edit_actions(editor):
+    editor.active.selectAll()
+    menu = editor.active.createStandardContextMenu()
+    try:
+        actions = {action.objectName(): action for action in menu.actions() if not action.isSeparator()}
+        assert set(actions) == {"edit-undo", "edit-redo", "edit-cut", "edit-copy",
+                                "edit-paste", "edit-delete", "select-all"}
+        assert all(not action.icon().isNull() for action in actions.values())
+        assert actions["edit-copy"].isEnabled()
+        actions["edit-copy"].trigger()
+        assert "Начало" in QApplication.clipboard().text()
+        actions["edit-delete"].trigger()
+        assert not editor.active.toPlainText()
+        editor.active.undo()
+        assert "Начало" in editor.active.toPlainText()
+    finally:
+        menu.deleteLater()
+
+
 def test_bold_formatting_survives_save_and_reload(editor):
     cursor = editor.textCursor()
     cursor.select(QTextCursor.SelectionType.WordUnderCursor)

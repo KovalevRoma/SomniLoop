@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from PySide6.QtCore import QDate, QLocale, QRectF, Qt, Signal
+from PySide6.QtCore import QDate, QLocale, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
@@ -91,6 +91,17 @@ class RoundCalendar(QWidget):
         self.grid.setVerticalSpacing(5)
         root.addLayout(self.grid, 1)
         self._render()
+        self.today = date.today()
+        self.day_timer = QTimer(self)
+        self.day_timer.setInterval(60000)
+        self.day_timer.timeout.connect(self._refresh_today)
+        self.day_timer.start()
+
+    def _refresh_today(self):
+        if self.today != date.today():
+            self.today = date.today()
+            for button in self.buttons:
+                button.update()
 
     def yearShown(self) -> int:
         return self.year

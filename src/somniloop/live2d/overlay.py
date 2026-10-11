@@ -58,6 +58,8 @@ class Live2DOverlay(QWidget):
         self.content_bottom = None
         self.content_bounds = None
         self.preview_remaining = 0.0
+        self.rave_active = False
+        self._dance_interval = 16
         self.reactions = ReactionController(self)
         self.reactions.requested.connect(self._react)
         self.speech = LocalSpeech(self)
@@ -217,7 +219,10 @@ class Live2DOverlay(QWidget):
                     self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,
                                       not self.config.interaction)
             elapsed = now - self.reaction_started
-            if self.preview_remaining > 0:
+            if self.rave_active:
+                self._advance_dance()
+                self.lookAt(0, 0)
+            elif self.preview_remaining > 0:
                 self.lookAt(0, 0)
             elif 0 <= elapsed < 1.4:
                 self.lookAt(0, self.reaction_strength * math.sin(elapsed / 1.4 * math.tau))
@@ -232,12 +237,12 @@ class Live2DOverlay(QWidget):
                 self.reaction_started = 0.0
             self._process_activity(now)
             self._hover(now)
-            if (self.config.idle
+            if (not self.rave_active and self.config.idle
                     and now >= self.next_motion and not self.preview_remaining
                     and not self.motion_remaining and now >= self.touch_priority_until):
                 self._event_motion("Flick3", random.randrange(2), 1)
                 self.next_motion = now + random.uniform(6, 10)
-            if (not self.preview_remaining and self.last_effect
+            if (not self.rave_active and not self.preview_remaining and self.last_effect
                     and now - self.last_effect > self.effect_duration):
                 self.resetExpression()
                 self.last_effect = 0
@@ -269,7 +274,8 @@ class Live2DOverlay(QWidget):
                         self._arrange()
             self.last_frame = now
             self.frames += 1
-            if self.config.interaction and not self.preview_remaining and self.frames % 6 == 1:
+            if (self.config.interaction and not self.rave_active
+                    and not self.preview_remaining and self.frames % 6 == 1):
                 self._update_hit_mask()
             self.update()
         except Exception as error:
@@ -346,7 +352,8 @@ class Live2DOverlay(QWidget):
         return hit_zone(x, y, parts)
 
     def _touch_reaction(self, zone):
-        if not self.renderer or not self.config.interaction or self.preview_remaining > 0:
+        if (self.rave_active or not self.renderer or not self.config.interaction
+                or self.preview_remaining > 0):
             return
         emotion = self.touch.react(zone, time.monotonic())
         if emotion is None:
@@ -378,6 +385,8 @@ class Live2DOverlay(QWidget):
         return self.motion_durations[key]
 
     def _event_motion(self, group, index, priority):
+        if self.rave_active:
+            return False
         if self.preview_remaining or (self.motion_remaining and priority < self.motion_priority):
             return False
         if priority < 3 and self.reactions.pending.isActive():
@@ -402,13 +411,13 @@ class Live2DOverlay(QWidget):
         self.effect_duration = duration
 
     def applicationEvent(self, event):
-        if (self.config.reactions and not self.disposed and self.config.enabled
+        if (not self.rave_active and self.config.reactions and not self.disposed and self.config.enabled
                 and event in ("not_done", "created", "settings_saved", "archived")):
             # Coalesce bulk changes; never replay a backlog of stale notifications.
             self.pending_activity = (event, time.monotonic())
 
     def _process_activity(self, now):
-        if not self.pending_activity:
+        if self.rave_active or not self.pending_activity:
             return
         event, started = self.pending_activity
         if now - started > 30 or not self.config.reactions:
@@ -428,7 +437,7 @@ class Live2DOverlay(QWidget):
         self.pending_activity = None
 
     def _hover(self, now):
-        if (not self.config.interaction or self.preview_remaining
+        if (self.rave_active or not self.config.interaction or self.preview_remaining
                 or getattr(self.host, "_modal_overlays", [])
                 or QApplication.mouseButtons() != Qt.MouseButton.NoButton):
             return
@@ -450,11 +459,11 @@ class Live2DOverlay(QWidget):
                              max(3, self.motion_remaining))
 
     def taskCompleted(self, all_done=False):
-        if self.config.reactions and self.isVisible() and not self.disposed:
+        if not self.rave_active and self.config.reactions and self.isVisible() and not self.disposed:
             self.reactions.submit(all_done)
 
     def _react(self, all_done):
-        if (not self.renderer or not self.isVisible()
+        if (self.rave_active or not self.renderer or not self.isVisible()
                 or getattr(self.host, "_modal_overlays", [])
                 or self.preview_remaining > 0
                 or (self.motion_remaining > 0 and self.motion_priority >= 3)
@@ -489,7 +498,7 @@ class Live2DOverlay(QWidget):
         QApplication.instance().setProperty("live2dVoiceError", message)
 
     def previewMotion(self, group, index):
-        if not self.renderer or self.disposed:
+        if self.rave_active or not self.renderer or self.disposed:
             return
         try:
             duration = self._duration(group, index)
@@ -509,6 +518,65 @@ class Live2DOverlay(QWidget):
             self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         except Exception as error:
             logger.warning("Motion preview failed: %s", error)
+
+    def setRaveActive(self, active):
+        if self.disposed:
+            return
+        if active:
+            if not self.requested_visible or not self.config.enabled:
+                return
+            self._sync()
+            if not self.renderer or not self.motions.get("Shake"):
+                return
+            if not self.rave_active:
+                self._dance_interval = self.timer.interval()
+            self.rave_active = True
+            self.timer.setInterval(33)
+            self.reactions.cancel()
+            self.gesture.cancel()
+            self.caption_timer.stop()
+            self.caption.hide()
+            self.speech.stop()
+            self.pending_activity = None
+            self.preview_remaining = self.reaction_started = self.last_effect = 0.0
+            self.motion_remaining = 0.0
+            self.clearMask()
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            try:
+                self.renderer.lib.sl_idle(self.renderer.handle, 0)
+                self.resetExpression()
+                happy = self.resources.expression_named("Smile")
+                if happy:
+                    self.setExpression(happy)
+                self._advance_dance()
+            except Exception as error:
+                logger.warning("Dance unavailable: %s", error)
+                self.setRaveActive(False)
+        elif self.rave_active:
+            self.rave_active = False
+            self.timer.setInterval(self._dance_interval)
+            self.motion_remaining = self.motion_priority = 0
+            self.last_effect = self.reaction_started = 0.0
+            self.next_motion = time.monotonic() + random.uniform(6, 10)
+            self.hover_zone = self.hover_position = None
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,
+                              not self.config.interaction)
+            self.clearMask()
+            try:
+                self.resetExpression()
+                if self.renderer:
+                    if self.motions.get("Idle"):
+                        self.playMotion("Idle", 0)
+                    self.renderer.lib.sl_idle(self.renderer.handle, int(self.config.idle))
+            except Exception as error:
+                logger.warning("Dance cleanup failed: %s", error)
+
+    def _advance_dance(self):
+        if self.motion_remaining <= 0:
+            self.playMotion("Shake", 0)
+            self.motion_remaining = self._duration("Shake", 0)
+            self.motion_priority = 4
+            self._set_status("Dancing", self.motion_remaining)
 
     def playMotion(self, group, index):
         if not self.renderer:
@@ -573,6 +641,7 @@ class Live2DOverlay(QWidget):
         self.setVisible(False)
 
     def _fail(self, error):
+        self.setRaveActive(False)
         self.error = str(error)
         QApplication.instance().setProperty("live2dError", self.error)
         logger.warning("Live2D disabled: %s", self.error)
@@ -590,6 +659,7 @@ class Live2DOverlay(QWidget):
     def dispose(self):
         if self.disposed:
             return
+        self.setRaveActive(False)
         self.disposed = True
         self.timer.stop()
         self.visibility_timer.stop()

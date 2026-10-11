@@ -111,6 +111,46 @@ def test_undo_does_not_overwrite_later_edits(repo):
     assert repo.completion_snapshot(identifier)[0]["title"] == "Later edit"
 
 
+def test_completed_row_stays_under_cursor_and_can_be_unchecked(app, repo, monkeypatch):
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QCursor
+
+    identifier = repo.save_planner_task("Task", date.today(), items=["A", "B"])
+    repo.save_planner_task("Other", date.today())
+    before = repo.completion_snapshot(identifier)
+    page = Dashboard(repo, I18n("en"), productivity=True)
+    page.resize(1100, 700)
+    page.show()
+    app.processEvents()
+    work = page.workspace
+    key = ("planner", identifier)
+    row = work.rows[key]
+    cursor = row.complete.mapToGlobal(row.complete.rect().center())
+    monkeypatch.setattr(QCursor, "pos", lambda: cursor)
+    try:
+        position = row.mapToGlobal(QPoint(0, 0))
+        row.complete.click()
+        QTest.qWait(2300)
+        assert row.isVisible() and row.complete.isEnabled() and row.complete.isChecked()
+        assert row.mapToGlobal(QPoint(0, 0)) == position
+        row.complete.click()
+        assert repo.completion_snapshot(identifier) == before
+        assert not row.entry.done and not row.complete.isChecked()
+        assert key not in work.held_completed
+        row.complete.click()
+        cursor = row.title.mapToGlobal(row.title.rect().center())
+        work.release_completed_when_unhovered(key)
+        assert key in work.held_completed
+        cursor = page.mapToGlobal(QPoint(0, 0))
+        QApplication.sendEvent(row, QEvent(QEvent.Type.Leave))
+        app.processEvents()
+        assert key not in work.held_completed
+        assert key not in {entry.key for entry in work.visible_entries}
+        assert repo.list_planner_tasks(True)[0].completed
+    finally:
+        page.close()
+
+
 def test_project_button_does_not_start_drag_and_legacy_size_is_ignored(app, repo, monkeypatch):
     from PySide6.QtWidgets import QPushButton
 

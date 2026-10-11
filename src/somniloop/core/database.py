@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import sqlite3
 from collections.abc import Iterable
@@ -155,6 +156,16 @@ CREATE TABLE IF NOT EXISTS birthday_notifications (
 CREATE INDEX IF NOT EXISTS task_entries_by_tracker_date ON task_entries(tracker_id, entry_date);
 CREATE INDEX IF NOT EXISTS tasks_by_tracker ON tasks(tracker_id);
 CREATE INDEX IF NOT EXISTS planner_by_archive_date ON planner_tasks(archived, due_date);
+CREATE TABLE IF NOT EXISTS task_images (
+    id INTEGER PRIMARY KEY,
+    task_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    data BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS images_by_task ON task_images(task_id);
+CREATE TRIGGER IF NOT EXISTS cleanup_task_images AFTER DELETE ON planner_tasks BEGIN
+    DELETE FROM task_images WHERE task_id=OLD.id;
+END;
 """
 
 
@@ -163,6 +174,7 @@ class Repository(PlanningRepository, ProductivityRepository):
         from .activity import ActivityEvents
 
         self.activity = ActivityEvents()
+        self.celebrations = ActivityEvents()
         self.path = Path(path)
         database_existed = self.path.exists() and self.path.stat().st_size > 0
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -607,6 +619,12 @@ class Repository(PlanningRepository, ProductivityRepository):
 
     def set_task_state(self, tracker_id: int, task_id: int, day: date, state: TaskState) -> None:
         self._cached(("sync",), lambda: None)
+        tracker = self.get_tracker(tracker_id)
+        celebrate = (
+            day == date.today() and state == TaskState.DONE
+            and tracker.mode == TrackerMode.REGULAR and not tracker.archived
+            and self.day_summary(tracker, day).status != DayStatus.DONE
+        )
         if state == TaskState.UNSET:
             self.connection.execute(
                 "DELETE FROM task_entries WHERE task_id=? AND entry_date=?",
@@ -632,6 +650,10 @@ class Repository(PlanningRepository, ProductivityRepository):
         self._read_cache.pop(("entries", tracker_id, day.replace(day=1).isoformat()), None)
         self._read_cache.pop(("streak_status", tracker_id, day.year), None)
         self._cache_generation = self.connection.total_changes
+        if celebrate and self.day_summary(tracker, day).status == DayStatus.DONE:
+            from .celebration import habit_fraction
+
+            self.celebrations.emit(habit_fraction(self, tracker, day))
         if state == TaskState.NOT_DONE:
             self.activity.emit("not_done")
 
@@ -1812,7 +1834,7 @@ class Repository(PlanningRepository, ProductivityRepository):
             "birthday_notifications",
         )
         tables += WORKSPACE_TABLES
-        return {
+        payload = {
             "format": "SomniLoop export",
             "version": 3,
             "exported_at": datetime.now().isoformat(timespec="seconds"),
@@ -1821,6 +1843,11 @@ class Repository(PlanningRepository, ProductivityRepository):
                 for table in tables
             },
         }
+        payload["tables"]["task_images"] = [
+            {**dict(row), "data": base64.b64encode(row["data"]).decode("ascii")}
+            for row in self.connection.execute("SELECT * FROM task_images ORDER BY id")
+        ]
+        return payload
 
     def restore_payload(self, payload: dict[str, Any]) -> Path:
         if payload.get("format") != "SomniLoop export" or payload.get("version") != 3:
@@ -1850,11 +1877,11 @@ class Repository(PlanningRepository, ProductivityRepository):
 
         # Older v3 exports have no workspace extension; restore those as empty.
         data = dict(data)
-        for table in WORKSPACE_TABLES:
+        for table in (*WORKSPACE_TABLES, "task_images"):
             data.setdefault(table, [])
             if not isinstance(data[table], list):
                 raise ValueError("Invalid workspace export")
-        tables += WORKSPACE_TABLES
+        tables += (*WORKSPACE_TABLES, "task_images")
 
         known_columns = {
             table: {row["name"] for row in self.connection.execute(f"PRAGMA table_info({table})")}
@@ -1865,8 +1892,25 @@ class Repository(PlanningRepository, ProductivityRepository):
                 if not isinstance(row, dict) or not row.keys() <= known_columns[table]:
                     raise ValueError(f"Некорректные данные таблицы {table}.")
 
+        images = []
+        task_ids = {row["id"] for row in data["planner_tasks"]}
+        counts = {}
+        for row in data["task_images"]:
+            encoded = row.get("data")
+            task_id = row.get("task_id")
+            counts[task_id] = counts.get(task_id, 0) + 1
+            if (not isinstance(encoded, str) or len(encoded) > 14 * 1024 * 1024
+                    or task_id not in task_ids or counts[task_id] > 10):
+                raise ValueError("Invalid task image attachment")
+            decoded = base64.b64decode(encoded, validate=True)
+            if len(decoded) > 10 * 1024 * 1024:
+                raise ValueError("Task image exceeds 10 MB")
+            images.append({**row, "data": decoded})
+        data["task_images"] = images
+
         backup = self.backup(label="before-import")
         delete_order = (
+            "task_images",
             "work_items",
             "work_inbox",
             "work_projects",

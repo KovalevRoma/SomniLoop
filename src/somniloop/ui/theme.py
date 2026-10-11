@@ -113,6 +113,25 @@ QTabBar::tab:selected { background: #715ee8; color: white; }
 
 def stylesheet(theme: str) -> str:
     base = LIGHT_STYLE if theme == "light" else DARK_STYLE
+    menu_bg, menu_fg, menu_border, menu_hover, menu_disabled = (
+        ("#ffffff", "#283449", "#dce2ed", "#eee9fc", "#929baa")
+        if theme == "light" else
+        ("#222735", "#eef0fa", "#41485b", "#39334f", "#828a9b")
+    )
+    menus = f"""
+    QMenu {{
+        background: {menu_bg}; color: {menu_fg}; border: 1px solid {menu_border};
+        border-radius: 10px; padding: 6px; font-size: 14px;
+    }}
+    QMenu::item {{
+        background: transparent; padding: 8px 22px 8px 12px;
+        margin: 1px 2px; border-radius: 6px;
+    }}
+    QMenu::item:selected {{ background: {menu_hover}; color: {menu_fg}; }}
+    QMenu::item:disabled {{ color: {menu_disabled}; }}
+    QMenu::separator {{ height: 1px; background: {menu_border}; margin: 5px 10px; }}
+    QMenu::icon {{ padding-left: 8px; }}
+    """
     extra = """
     QFrame#sectionDivider { background: #9483ba; border: none; border-radius: 2px; }
     QListWidget::item { padding: 5px 6px; border-radius: 6px; }
@@ -235,4 +254,4 @@ def stylesheet(theme: str) -> str:
         """
     from .workspace_style import workspace_stylesheet
 
-    return base + extra + home + workspace_stylesheet(theme)
+    return base + extra + home + workspace_stylesheet(theme) + menus

@@ -4,12 +4,43 @@ import re
 from collections import defaultdict, deque
 from datetime import date, datetime
 
+from .celebration import celebrate_task, pending_today
 from .dates import age_on, birthday_in_year, display_date, one_month_before
 from .models import PlannerTask, TaskState
 
 
 class PlanningRepository:
     """Planner and reminder queries share the application's SQLite connection."""
+
+    def task_images(self, task_id):
+        return [(row[0], bytes(row[1])) for row in self.connection.execute(
+            "SELECT name,data FROM task_images WHERE task_id=? ORDER BY id", (task_id,),
+        )]
+
+    def save_task_images(self, task_id, images):
+        if len(images) > 10 or any(len(data) > 10 * 1024 * 1024 for _, data in images):
+            raise ValueError("At most 10 images of up to 10 MB each are allowed")
+        if not self.connection.execute("SELECT 1 FROM planner_tasks WHERE id=?", (task_id,)).fetchone():
+            raise ValueError("Task does not exist")
+        with self.connection:
+            self.connection.execute("DELETE FROM task_images WHERE task_id=?", (task_id,))
+            self.connection.executemany(
+                "INSERT INTO task_images(task_id,name,data) VALUES (?,?,?)",
+                [(task_id, name, data) for name, data in images],
+            )
+
+    def project_calendar_days(self, project_id):
+        days = {}
+        if project_id is None:
+            return days
+        for row in self.connection.execute(
+            "SELECT p.due_date,p.due_time,p.title FROM planner_tasks p "
+            "JOIN work_items w ON w.kind='planner' AND w.item_id=p.id "
+            "WHERE w.project_id=? AND p.due_date!='' AND (p.archived=0 OR p.completed=1) "
+            "ORDER BY p.due_date, p.due_time, p.id", (project_id,),
+        ):
+            days.setdefault(row[0], []).append((row[1], row[2]))
+        return days
 
     def save_planner_task(
         self,
@@ -104,6 +135,7 @@ class PlanningRepository:
         if row is None:
             return
         task_id = row[0]
+        before = pending_today(self) if state == TaskState.DONE else set()
         with self.connection:
             self.connection.execute(
                 "UPDATE planner_items SET done=?, state=? WHERE id=?",
@@ -134,11 +166,13 @@ class PlanningRepository:
             self.activity.emit("not_done")
         elif not remaining:
             self.activity.emit("archived")
+            celebrate_task(self, task_id, before)
 
     def complete_planner_task(self, task_id: int) -> None:
         self.set_planner_task_state(task_id, TaskState.DONE)
 
     def set_planner_task_state(self, task_id: int, state: TaskState) -> None:
+        before = pending_today(self) if state == TaskState.DONE else set()
         with self.connection:
             self.connection.execute(
                 "UPDATE planner_items SET done=?, state=? WHERE planner_id=?",
@@ -159,6 +193,7 @@ class PlanningRepository:
             self.activity.emit("not_done")
         elif state == TaskState.DONE:
             self.activity.emit("archived")
+            celebrate_task(self, task_id, before)
 
     def archive_planner_task(self, task_id: int, archived: bool = True) -> None:
         with self.connection:

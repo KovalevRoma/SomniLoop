@@ -189,11 +189,13 @@ def test_project_move_and_task_accent(app, repo):
         assert grid in page.workspace.extra_widgets
         page.workspace.tabs.setCurrentIndex(0)
         row = page.workspace.rows[("planner", task)]
-        assert "#a45db2" in row.styleSheet()
+        assert "background: #d9bbdf" in row.styleSheet()
+        assert "border-bottom" not in row.styleSheet()
         repo.save_work_project("First", project_id=first, color="#278b71")
         page.refresh()
         assert page.workspace.rows[("planner", task)] is row
-        assert "#278b71" in row.styleSheet()
+        assert "background: #a4cec3" in row.styleSheet()
+        assert "border-bottom" not in row.styleSheet()
     finally:
         page.close()
 

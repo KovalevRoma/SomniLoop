@@ -1,14 +1,17 @@
 """Offline Markdown editing with native text formatting and nested toggle blocks."""
 
+import base64
 import html
 import math
 import re
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, Qt, QUrl, Signal
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import (
     QDesktopServices,
     QFont,
     QImage,
+    QPixmap,
     QTextBlockFormat,
     QTextCharFormat,
     QTextCursor,
@@ -22,6 +25,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QMessageBox,
     QScrollArea,
     QSizePolicy,
     QTextEdit,
@@ -33,6 +37,7 @@ from PySide6.QtWidgets import (
 from .activity_scrollbar import ActivityScrollBar
 from .controls import RoundedDialog, polish_dialog_buttons
 from .icons import interface_icon
+from .image_block import ImageBlock
 
 
 def safe_link(value):
@@ -68,9 +73,67 @@ class TextBlock(QTextEdit):
         # Empty paragraphs still need a caret line, not a full editor-sized gap.
         self.setFixedHeight(math.ceil(self.document().size().height()) + 2 * self.frameWidth() + 2)
 
+    def createStandardContextMenu(self, *args):
+        menu = super().createStandardContextMenu(*args)
+        icons = {"edit-undo": "undo", "edit-redo": "redo", "edit-cut": "cut",
+                 "edit-copy": "copy", "edit-paste": "paste", "edit-delete": "delete",
+                 "select-all": "select_all"}
+        for action in menu.actions():
+            if icon := icons.get(action.objectName()):
+                action.setIcon(interface_icon(icon))
+        return menu
+
+    def contextMenuEvent(self, event):
+        menu = self.createStandardContextMenu(event.pos())
+        try:
+            menu.exec(event.globalPos())
+        finally:
+            menu.deleteLater()
+
     def focusInEvent(self, event):
         self.owner.root_editor().active = self
         super().focusInEvent(event)
+
+    def canInsertFromMimeData(self, source):
+        return source.hasImage() or bool(self.clipboard_image_path(source)) or super().canInsertFromMimeData(source)
+
+    @staticmethod
+    def clipboard_image_path(source):
+        urls = source.urls()
+        if len(urls) == 1 and urls[0].isLocalFile():
+            path = Path(urls[0].toLocalFile())
+            if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}:
+                return path
+        return None
+
+    def insertFromMimeData(self, source):
+        path = self.clipboard_image_path(source)
+        if not source.hasImage() and path is None:
+            return super().insertFromMimeData(source)
+        if self.isReadOnly():
+            return
+        if not source.hasImage():
+            try:
+                with path.open("rb") as stream:
+                    data = stream.read(10 * 1024 * 1024 + 1)
+                self.owner.insert_image(data, editor=self)
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(self, "Image", str(error))
+            return
+        raw = source.imageData()
+        image = raw.toImage() if isinstance(raw, QPixmap) else QImage(raw)
+        if image.isNull() or image.width() * image.height() > 40_000_000:
+            QMessageBox.warning(self, "Image", "Image is invalid or larger than 40 megapixels")
+            return
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        buffer.close()
+        try:
+            self.owner.insert_image(bytes(data), editor=self)
+        except ValueError as error:
+            QMessageBox.warning(self, "Image", str(error))
 
     def mouseReleaseEvent(self, event):
         if self.isReadOnly() or event.modifiers() & Qt.KeyboardModifier.ControlModifier:
@@ -211,6 +274,14 @@ def split_blocks(source):
     result, buffer = [], []
     index = 0
     while index < len(lines):
+        image = re.fullmatch(r'<somniloop-image width="(\d{1,4})" data="([A-Za-z0-9+/=]+)" />', lines[index].strip())
+        if image and len(image[2]) <= 14 * 1024 * 1024:
+            if buffer:
+                result.append(("text", "".join(buffer).strip(), ""))
+                buffer = []
+            result.append(("image", image[2], image[1]))
+            index += 1
+            continue
         if lines[index].strip() == "<details>" and index + 1 < len(lines):
             summary = re.fullmatch(r"<summary>(.*?)</summary>", lines[index + 1].strip())
             if summary:
@@ -338,7 +409,14 @@ class RichTextEditor(QWidget):
             ancestor = ancestor.parentWidget()
         parts = split_blocks(source) if depth < 20 else [("text", source, "")]
         for kind, value, content in parts:
-            self.append_block(ToggleBlock(self, value, content) if kind == "toggle" else TextBlock(self, value))
+            if kind == "image":
+                try:
+                    block = ImageBlock(self, base64.b64decode(value, validate=True), int(content))
+                except ValueError:
+                    block = TextBlock(self, f'<somniloop-image width="{content}" data="{value}" />')
+            else:
+                block = ToggleBlock(self, value, content) if kind == "toggle" else TextBlock(self, value)
+            self.append_block(block)
         if not self.blocks or not isinstance(self.blocks[-1], TextBlock):
             self.append_block(TextBlock(self))
         self.active = next((b for b in self.blocks if isinstance(b, TextBlock)), None)
@@ -356,7 +434,32 @@ class RichTextEditor(QWidget):
         if not self.dirty:
             return self.original
         return "\n\n".join(value for b in self.blocks if (value := (
-            b.source() if isinstance(b, ToggleBlock) else b.toMarkdown().strip())))
+            b.source() if isinstance(b, (ToggleBlock, ImageBlock)) else b.toMarkdown().strip())))
+
+    def insert_image(self, data, editor=None):
+        if self.read_only:
+            return
+        editor = editor or self.active
+        owner = editor.owner
+        block = ImageBlock(owner, data)
+        block.preferred_width = max(40, min(320, round(180 * block.pixmap.width() / block.pixmap.height())))
+        block._layout_image()
+        cursor = editor.textCursor()
+        cursor.removeSelectedText()
+        cursor.movePosition(QTextCursor.MoveOperation.End, QTextCursor.MoveMode.KeepAnchor)
+        tail = cursor.selection().toHtml()
+        cursor.removeSelectedText()
+        trailing = TextBlock(owner)
+        trailing.setHtml(tail)
+        index = owner.blocks.index(editor) + 1
+        for offset, widget in enumerate((block, trailing)):
+            owner.blocks.insert(index + offset, widget)
+            owner.column.insertWidget(index + offset, widget)
+        trailing.setFocus()
+        self.root_editor().active = trailing
+        owner.active = trailing
+        owner.changed()
+        return block
 
     def toPlainText(self):
         return "\n".join(b.title.text() + "\n" + b.content.toPlainText()

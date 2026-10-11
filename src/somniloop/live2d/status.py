@@ -11,6 +11,7 @@ class EmotionBadge(QWidget):
     LABELS = {
         "Normal": ("Спокойна", "Relaxed", "#b4a5d6"),
         "Smile": ("Рада", "Happy", "#83cdb1"),
+        "Dancing": ("Танцует", "Dancing", "#d6a0e8"),
         "Surprised": ("Удивлена", "Surprised", "#e4c17d"),
         "Angry": ("Сердится", "Annoyed", "#df929b"),
         "Blushing": ("Смущена", "Blushing", "#d6a0c2"),

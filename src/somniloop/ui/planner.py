@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, Signal
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialogButtonBox,
@@ -11,6 +13,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QScrollArea,
     QTabWidget,
@@ -18,8 +22,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from somniloop.core.dates import display_date
+from somniloop.core.dates import birthday_in_year, display_date
 
+from .activity_scrollbar import ActivityScrollBar
 from .controls import RoundedDialog, link_label, polish_dialog_buttons, show_saved
 from .rich_text import RichTextEditor, RichTextView
 from .task_date_picker import TaskDateField
@@ -57,7 +62,14 @@ class PlannerDialog(RoundedDialog):
         self.date_field = TaskDateField(i18n.language, task.due_date if task else "",
                                         task.due_time if task else "")
         self.description_edit = RichTextEditor(task.description if task else "")
-        self.description_edit.setMinimumHeight(200)
+        self.legacy_images = []
+        for name, data in repository.task_images(task.id) if task else []:
+            try:
+                self.description_edit.active.moveCursor(QTextCursor.MoveOperation.End)
+                self.description_edit.insert_image(data)
+            except ValueError:
+                self.legacy_images.append((name, data))
+        self.description_edit.setMinimumHeight(300)
         self.description_edit.setMaximumHeight(360)
         form.addRow(i18n.t("name"), self.title_edit)
         form.addRow("", self.validation_message)
@@ -69,6 +81,9 @@ class PlannerDialog(RoundedDialog):
             self.project.addItem(project["name"], project["id"])
         self.work_values = repository.work_metadata().get(("planner", task.id), {}) if task else {}
         self.project.setCurrentIndex(max(0, self.project.findData(self.work_values.get("project_id"))))
+        self.date_field.project_days_provider = lambda: repository.project_calendar_days(
+            self.project.currentData()
+        )
         form.addRow("Проект" if i18n.language == "ru" else "Project", self.project)
         form.setVerticalSpacing(12)
         root.addLayout(form)
@@ -110,6 +125,7 @@ class PlannerDialog(RoundedDialog):
                                        priority=self.work_values.get("priority", 0),
                                        planned_on=self.work_values.get("planned_on", ""),
                                        next_action=self.work_values.get("next_action", ""))
+        self.repository.save_task_images(self.saved_task_id, self.legacy_images)
         if self.parentWidget():
             show_saved(self.parentWidget(), self.i18n.t("saved"))
         self.accept()
@@ -286,43 +302,78 @@ class NotificationDrawer(QFrame):
 
     def __init__(self, repository, i18n, parent=None) -> None:
         super().__init__(parent)
+        self.anchor = None
         self.repository, self.i18n = repository, i18n
         self.setObjectName("notificationDrawer")
-        self.setMaximumHeight(220)
+        self.setFixedSize(420, 360)
         root = QVBoxLayout(self)
         title = QLabel(i18n.t("birthday_reminders"))
         title.setObjectName("sectionTitle")
         root.addWidget(title)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        container = QWidget()
-        self.rows = QVBoxLayout(container)
-        self.rows.setAlignment(Qt.AlignmentFlag.AlignTop)
-        scroll.setWidget(container)
-        root.addWidget(scroll)
+        self.list = QListWidget()
+        self.list.setUniformItemSizes(True)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setVerticalScrollBar(ActivityScrollBar(self.list))
+        root.addWidget(self.list)
         self.refresh()
         self.hide()
 
-    def _dismiss(self, identifier: int) -> None:
-        self.repository.dismiss_notification(identifier)
+    def toggle_at(self, anchor):
+        if self.isVisible():
+            self.hide()
+            return
         self.refresh()
+        self.anchor = anchor
+        if self.parentWidget() is not anchor.window():
+            self.setParent(anchor.window())
+        point = anchor.mapTo(self.parentWidget(), QPoint(anchor.width() - self.width(), anchor.height() + 6))
+        point.setX(max(0, min(point.x(), self.parentWidget().width() - self.width())))
+        point.setY(max(0, min(point.y(), self.parentWidget().height() - self.height())))
+        self.move(point)
+        self.show()
+        self.raise_()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QApplication.instance().installEventFilter(self)
+
+    def hideEvent(self, event):
+        QApplication.instance().removeEventFilter(self)
+        super().hideEvent(event)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            return True
+        if event.type() == QEvent.Type.MouseButtonPress and isinstance(watched, QWidget):
+            if watched is not self and not self.isAncestorOf(watched) and watched is not self.anchor:
+                self.hide()
+        if watched is self.parentWidget() and event.type() in (QEvent.Type.Resize, QEvent.Type.Close):
+            self.hide()
+        return False
 
     def refresh(self) -> None:
-        self.repository.sync_birthday_notifications()
-        notifications = self.repository.list_notifications()
-        clear_layout(self.rows)
-        for notice in notifications:
-            frame = QWidget()
-            row = QHBoxLayout(frame)
-            label = QLabel("🎂  " + notice["title"])
-            label.setWordWrap(True)
-            row.addWidget(label, 1)
-            dismiss = QPushButton(self.i18n.t("dismiss"))
-            dismiss.clicked.connect(
-                lambda checked=False, identifier=notice["id"]: self._dismiss(identifier)
-            )
-            row.addWidget(dismiss)
-            self.rows.addWidget(frame)
-        if not notifications:
-            self.rows.addWidget(QLabel(self.i18n.t("notifications_empty")))
-        self.count_changed.emit(len(notifications))
+        from somniloop.knowledge.people import has_birth_conflict
+
+        today = date.today()
+        upcoming = []
+        for person in self.repository.list_people():
+            if has_birth_conflict({"conflicts": person.conflicts}):
+                continue
+            birthday = birthday_in_year(person.birth_date, today.year)
+            if birthday is not None and birthday < today:
+                birthday = birthday_in_year(person.birth_date, today.year + 1)
+            if birthday is not None:
+                upcoming.append((birthday, person.name))
+        upcoming.sort(key=lambda item: (item[0], item[1].casefold()))
+        self.list.clear()
+        for birthday, name in upcoming:
+            delta = (birthday - today).days
+            when = ("Сегодня" if self.i18n.language == "ru" else "Today") if delta == 0 else display_date(birthday)
+            item = QListWidgetItem(f"♛  {name}\n{when}")
+            item.setToolTip(f"{name}\n{when}")
+            item.setSizeHint(QSize(0, self.list.fontMetrics().height() * 2 + 20))
+            self.list.addItem(item)
+        if not upcoming:
+            self.list.addItem(self.i18n.t("notifications_empty"))
+        self.count_changed.emit(sum((birthday - today).days <= 30 for birthday, _ in upcoming))

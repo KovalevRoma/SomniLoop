@@ -39,6 +39,7 @@ from .tracker_detail import TrackerDetailDialog
 
 class MainWindow(QMainWindow):
     activity_received = Signal(str)
+    celebration_received = Signal(float)
 
     def __init__(self, repository: Repository, icon_path: Path | None = None) -> None:
         super().__init__()
@@ -51,6 +52,10 @@ class MainWindow(QMainWindow):
         self._rebuild_ui()
         self.activity_received.connect(self._character_activity, Qt.ConnectionType.QueuedConnection)
         self._unsubscribe_activity = repository.activity.subscribe(self.activity_received.emit)
+        self.celebration_received.connect(self._celebrate, Qt.ConnectionType.QueuedConnection)
+        self._unsubscribe_celebrations = repository.celebrations.subscribe(
+            self.celebration_received.emit
+        )
         self._current_day = date.today()
         self.day_timer = QTimer(self)
         self.day_timer.setInterval(60000)
@@ -63,6 +68,12 @@ class MainWindow(QMainWindow):
         QApplication.instance().applicationStateChanged.connect(self._application_state_changed)
 
     def _rebuild_ui(self) -> None:
+        if hasattr(self, "notification_drawer"):
+            self.notification_drawer.close()
+            self.notification_drawer.deleteLater()
+        if hasattr(self, "rave"):
+            self.rave.dispose()
+            self.rave.deleteLater()
         if hasattr(self, "character"):
             self.character.dispose()
             self.character.deleteLater()
@@ -147,7 +158,7 @@ class MainWindow(QMainWindow):
         self.notifications_button.setAccessibleName(self.i18n.t("birthday_reminders"))
         self.notifications_button.setToolTip(self.i18n.t("birthday_reminders"))
         self.notifications_button.clicked.connect(
-            lambda: self.notification_drawer.setVisible(not self.notification_drawer.isVisible())
+            lambda: self.notification_drawer.toggle_at(self.notifications_button)
         )
         top.addWidget(logo)
         top.addWidget(title)
@@ -160,14 +171,13 @@ class MainWindow(QMainWindow):
         top_actions.addWidget(archive)
         top_actions.addWidget(settings)
         root.addWidget(top_bar)
-        self.notification_drawer = NotificationDrawer(self.repository, self.i18n)
+        self.notification_drawer = NotificationDrawer(self.repository, self.i18n, self)
         self.notification_drawer.count_changed.connect(
             lambda count: self.notifications_button.setText(str(count))
         )
         self.notification_drawer.refresh()
         if QApplication.instance().platformName() != "offscreen":
             show_desktop_notifications(self.repository)
-        root.addWidget(self.notification_drawer)
 
         self.pages = QStackedWidget()
         self.dashboard = Dashboard(self.repository, self.i18n, productivity=True)
@@ -204,6 +214,13 @@ class MainWindow(QMainWindow):
         self.character = Live2DOverlay(self, CharacterConfig.load(self.repository))
         self.dashboard.task_completed.connect(self.character.taskCompleted)
         self.dashboard.feedback_invalidated.connect(self.character.reactions.cancel)
+        from .rave import RaveOverlay
+
+        self.rave = RaveOverlay(self)
+        self.rave.activeChanged.connect(self.character.setRaveActive)
+
+    def _celebrate(self, fraction):
+        self.rave.start(fraction)
 
     def _show_page(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
@@ -367,6 +384,8 @@ class MainWindow(QMainWindow):
         self.day_timer.stop()
         self.clock_timer.stop()
         self._unsubscribe_activity()
+        self._unsubscribe_celebrations()
+        self.rave.dispose()
         self.character.dispose()
         self.graph_page.graph_view.save_state()
         self.graph_page.graph_view.state.repository = None
